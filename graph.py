@@ -242,12 +242,6 @@ def _generate_graph(args, config, data_path):
     import pandas as pd
     import plotly.graph_objects as go
 
-    # Fetch US County data
-    logging.debug("Fetching US County GeoJSON...")
-    with urllib.request.urlopen(GEOJSON_URL) as response:
-        counties = json.load(response)
-    logging.debug("... success!")
-
     # Each JSON file in the data path is a trace on the figure. The slider will allow us to select
     # which trace the user is viewing.
     fig = go.Figure()
@@ -276,7 +270,7 @@ def _generate_graph(args, config, data_path):
                         f"Mean Cases Per Capita: {mean}<br>" \
                         f"Median Cases Per Capita: {median}<br>" \
                         f"STDDev: {stddev}</extra>"
-        fig.add_trace(go.Choropleth(geojson=counties,
+        fig.add_trace(go.Choropleth(geojson=GEOJSON_URL,
                                     name=date,
                                     locations=df["location"],
                                     z=df["cases_per_capita"],

@@ -41,9 +41,6 @@ _graph_parser.add_argument("dest", help="path to output the graph (will open in 
 # original source: https://github.com/kjhealy/fips-codes
 FIPS_PATH = Path(__file__).parent.joinpath("state_and_county_fips_master.csv")
 
-# Plotly standard data file
-GEOJSON_URL = "https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json"
-
 # The NYT data sometimes reports cases for a certain area instead of a FIPS code. In that case,
 # we need to remap that area to the FIPS codes it encompasses. See the README.md in the NYT
 # repository, subsection "Geographic Exceptions"
@@ -242,7 +239,6 @@ def _graph(args, config):
             _generate_graph(args, config, json_path)
 
 def _generate_graph(args, config, data_path):
-    from collections import OrderedDict
     from math import isnan
     import pandas as pd
     import plotly.graph_objects as go
@@ -275,17 +271,24 @@ def _generate_graph(args, config, data_path):
                         f"Mean Cases Per Capita: {mean}<br>" \
                         f"Median Cases Per Capita: {median}<br>" \
                         f"STDDev: {stddev}</extra>"
-        fig.add_trace(go.Choropleth(geojson=GEOJSON_URL,
-                                    name=date,
-                                    locations=df["location"],
-                                    z=df["cases_per_capita"],
-                                    zmax=mean+stddev, zmin=max(mean-stddev, 0.0),
-                                    text=df["text"],
-                                    hovertemplate=hovertemplate,
-                                    colorbar_title="Cases Per Capita",
-                                    # Portland and Temps offer the best visualizations IME
-                                    colorscale="Portland"))
-    fig.update_layout(geo_scope="usa",
+        fig.add_trace(go.Choroplethmapbox(geojson=config["map"]["county_geojson"],
+                                          name=date,
+                                          locations=df["location"],
+                                          z=df["cases_per_capita"],
+                                          zmax=mean+stddev, zmin=max(mean-stddev, 0.0),
+                                          text=df["text"],
+                                          hovertemplate=hovertemplate,
+                                          colorbar_title="Cases Per Capita",
+                                          marker_opacity=0.5, marker_line_width=0,
+                                          # Portland and Temps offer the best visualizations IME
+                                          colorscale="Portland"))
+
+    # I had to change from a choropleth to a choroplethmapbox. Despite the poor documentation of plotly,
+    # the difference appears to the that the former uses a webgl powered service known as mapbox.
+    # This handles the county geojson much better than the builtin map, though sadly the builtin
+    # map lets us zoom in exclusively on the US. If we ever go back to choropleth, set `geo_scope="usa"`
+    fig.update_layout(mapbox_style="carto-positron",
+                      mapbox_zoom=4, mapbox_center = {"lat": 37.0902, "lon": -95.7129},
                       title_text="US COVID-19 Cases Per Capita<br>(Hover for more detail)",
                       annotations=[{ "x": 0.55,
                                      "y": 0.05,

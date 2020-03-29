@@ -29,6 +29,7 @@ _sub_parsers = _parser.add_subparsers(title="command", dest="command", required=
 # Dump Generated Census command
 _dump_parser = _sub_parsers.add_parser("dumpjson")
 _dump_parser.add_argument("-p", "--pretty", action="store_true", help="pretty format json", default=False)
+_dump_parser.add_argument("--no-zerofill", action="store_true", help="don't zerofill counties with no cases", default=False)
 _dump_parser.add_argument("dest", type=Path, help="path to dump generated json", nargs="?", default="out")
 
 # Graph command
@@ -75,12 +76,67 @@ def _fetch_csv(config):
     csv_files["fips"] = open(FIPS_PATH, "r")
     return csv_files
 
-def _generate_data(out_path, census_file, fips_file, nytimes_file, pretty=False):
+def _generate_data(out_path, census_file, fips_file, nytimes_file, pretty=False, concise=False):
     import csv
     from collections import defaultdict
     from functools import partial
 
     logging.info("Generating data...")
+
+    # Take the US census estimate for 2019 and calculate per-capita statistics.
+    # TODO: when the 2020 census is complete, that might be a better source of data.
+    logging.debug("Digging through Census data...")
+    census = csv.DictReader(census_file)
+    fips = csv.DictReader(fips_file)
+
+    # Known mismatched lines due to turds like encodings (damn you windows-1252)
+    known_mismatches = { 1834: "Doña Ana County" }
+
+    # Apply the population from the census to each FIPS code
+    fips_info = {}
+    for i, (i_census, i_fips) in enumerate(zip(census, fips)):
+        # make sure the stuff matches. hopefully no spelling errors are in the files...
+        # damn that Doña Ana County... and damn that Microsoft windows-1252 encoding.
+        census_county_name, fips_name = i_census["CTYNAME"].strip(), i_fips["name"].strip()
+        if census_county_name.lower() != fips_name.lower():
+            census_county_name = known_mismatches.get(i)
+            if census_county_name is None:
+                logging.critical(f"Census/FIPS CSV mismatch: {i} {census_name} || {fips_name}")
+                raise RuntimeError()
+
+        # State population is given when CTYNAME == STNAME. Stash as both the state name
+        # and the fips state code for ease of use.
+        census_state_name = i_census["STNAME"].strip()
+        if census_county_name == census_state_name:
+            the_fips_code = int(i_fips["fips"].strip().zfill(5)[:-3])
+            # include: state name, state fips code, county-link fips code
+            fips_codes = [census_state_name, the_fips_code, int(i_fips["fips"].strip().zfill(5))]
+            state = True
+        else:
+            title = f"{census_county_name}, {census_state_name}"
+            the_fips_code = int(i_fips["fips"])
+            fips_codes = [the_fips_code]
+            state = False
+
+        pop = int(i_census["POPESTIMATE2019"])
+        for fips_code in fips_codes:
+            fips_info[fips_code] = { "fips_code": the_fips_code,
+                                     "population": pop,
+                                     "state": state,
+                                     "title": title }
+
+
+    # OK, so before we can calculate the per-capita, some of the cases/deaths were reported by multiple
+    # FIPS codes. For example, "New York City" was listed w/o a FIPS code but New York City is made of five counties...
+    # So, we need to merge the total population of those fips codes
+    fips_merge = {}
+    for (city, state), i in COUNTY_REMAP.items():
+        for fips_code in i:
+            fips_merge[fips_code] = { "population": sum((fips_info[j]["population"] for j in i)),
+                                      "state": False,
+                                      "title": f"{city}, {state}" }
+    fips_info.update(fips_merge)
+
 
     # Load all NYT data into memory so we can operate on it later
     # Format: [date][fipscode][...]
@@ -91,80 +147,62 @@ def _generate_data(out_path, census_file, fips_file, nytimes_file, pretty=False)
     data = defaultdict(partial(defaultdict, partial(defaultdict, int)))
 
     for i in nyt:
+        state_name = i["state"].strip()
+        if state_name not in fips_info:
+            # Territories are not listed in the Census data... wtf?
+            continue
+
         fips = i["fips"].strip()
         if not fips:
             fips = COUNTY_REMAP.get((i["county"], i["state"]))
-            unit_type = ""
+            state = False
         else:
-            fips = [int(fips)]
-            unit_type = " Parish" if i["state"] == "Louisiana" else " County"
+            fips = int(fips)
+            state = fips_info[fips]["state"]
+            fips = [fips,]
 
         date_data = data[i["date"].strip()]
         if fips:
             for fips_code in fips:
                 county_datum = date_data[fips_code]
                 # Plotly seems to have issues with 4 digit county codes
-                county_datum["location"] = str(fips_code).zfill(5)
-                county_datum["title"] = f"{i['county']}{unit_type}, {i['state']}"
+                county_datum["location"] = str(fips_code).zfill(2 if state else 5)
+                county_datum["title"] = fips_info[fips_code]["title"]
                 county_datum["total_cases"] += int(i["cases"])
                 county_datum["total_deaths"] += int(i["deaths"])
         elif i["county"].lower() != "unknown":
             # don't whine on "unknown" - we know.
             logging.warning(f"No FIPS code for datum {i}")
 
-        state_name = i["state"].strip()
         state_datum = date_data[state_name]
         state_datum["title"] = state_name
+        state_datum["location"] = fips_info[state_name]["fips_code"]
         state_datum["total_cases"] += int(i["cases"])
         state_datum["total_deaths"] += int(i["deaths"])
 
-        # FIXME: what if a state only has cases in "Unknown County" (no fips in NYT data)???
-        if fips:
-            state_datum["location"] = i["fips"].strip().zfill(5)[:-3]
-
-    # Take the US census estimate for 2019 and calculate per-capita statistics.
-    # TODO: when the 2020 census is complete, that might be a better source of data.
-    logging.debug("Digging through Census data...")
-    census = csv.DictReader(census_file)
-    fips = csv.DictReader(fips_file)
-
-    # Known mismatched lines due to turds like encodings (damn you windows-1252)
-    known_mismatches = (1834,)
-
-    # Apply the population from the census to each FIPS code
-    fips_population = {}
-    for i, (i_census, i_fips) in enumerate(zip(census, fips)):
-        # make sure the stuff matches. hopefully no spelling errors are in the files...
-        # damn that Doña Ana County... and damn that Microsoft windows-1252 encoding.
-        census_name, fips_name = i_census["CTYNAME"], i_fips["name"]
-        if census_name.lower() != fips_name.lower() and i not in known_mismatches:
-            logging.critical(f"Census/FIPS CSV mismatch: {i} {census_name} || {fips_name}")
-            raise RuntimeError()
-        fips_population[int(i_fips["fips"])] = int(i_census["POPESTIMATE2019"])
-
-        # State population is given when CTYNAME == STNAME. These are not FIPS codes, but
-        # we are storing state data keyed by state name, so there you go.
-        if i_census["CTYNAME"].strip() == i_census["STNAME"].strip():
-            fips_population[i_census["STNAME"].strip()] = int(i_census["POPESTIMATE2019"])
-
-    # OK, so before we can calculate the per-capita, some of the cases/deaths were reported by multiple
-    # FIPS codes. For example, "New York City" was listed w/o a FIPS code but New York City is made of five counties...
-    # So, we need to merge the total population of those fips codes
-    fips_population_merge = {}
-    for i in COUNTY_REMAP.values():
-        for fips_code in i:
-            fips_population_merge[fips_code] = sum((fips_population[j] for j in i))
-    fips_population.update(fips_population_merge)
+    # Zero fill
+    if not concise:
+        logging.debug("Zero filling counties with no cases...")
+        all_locations = frozenset((i for i in fips_info.keys() if isinstance(i, int)))
+        for date_data in data.values():
+            our_locations = frozenset(date_data.keys())
+            for i in all_locations - our_locations:
+                info = fips_info[i]
+                zerofill = date_data[i]
+                zerofill["location"] = str(i).zfill(2 if info["state"] else 5)
+                zerofill["title"] = info["title"]
+                zerofill["total_cases"] = 0
+                zerofill["total_deaths"] = 0
 
     # Calculate per capita
     logging.debug("Calculating per capita rates...")
     for location, datum in itertools.chain.from_iterable((i.items() for i in data.values())):
-        pop = fips_population.get(location)
-        if pop:
+        if location in fips_info:
+            pop = fips_info[location]["population"]
             datum["population"] = pop
             datum["cases_per_capita"] = datum["total_cases"] / pop
             datum["deaths_per_capita"] = datum["total_deaths"] / pop
-            datum["mortality"] = datum["deaths_per_capita"] / datum["cases_per_capita"]
+            datum["mortality"] = (datum["deaths_per_capita"] / datum["cases_per_capita"]) if datum["cases_per_capita"] != 0.0 else 0.0
         else:
             logging.warning(f"No population available for {location}")
 
@@ -184,7 +222,7 @@ def _dump_json(args, config):
 
     csv_files = _fetch_csv(config)
     out_path.mkdir(parents=True, exist_ok=True)
-    _generate_data(out_path, csv_files["census"], csv_files["fips"], csv_files["nyt_county"], args.pretty)
+    _generate_data(out_path, csv_files["census"], csv_files["fips"], csv_files["nyt_county"], args.pretty, args.no_zerofill)
 
 
 def _graph(args, config):
@@ -203,7 +241,6 @@ def _generate_graph(args, config, data_path):
     from math import isnan
     import pandas as pd
     import plotly.graph_objects as go
-    import plotly.io as pio
 
     # Fetch US County data
     logging.debug("Fetching US County GeoJSON...")
@@ -215,7 +252,9 @@ def _generate_graph(args, config, data_path):
     # which trace the user is viewing.
     fig = go.Figure()
     for i in sorted(data_path.glob("*.json")):
-        df = pd.read_json(i, orient="columns", precise_float=True, dtype={"location": False})
+        date = i.stem
+        logging.debug(f"Generating trace for {date}...")
+        df = pd.read_json(i, dtype={"location": False})
 
         # I apologize in advance for this sin.
         make_hover = lambda x: f"<b>{x['title']}</b><br>" \
@@ -227,15 +266,39 @@ def _generate_graph(args, config, data_path):
                                f"Mortality Rate: {round(x['mortality'] * 2, 2)}%"
         df["text"] = df.apply(make_hover, axis=1)
 
-        date = i.stem
-        logging.debug(f"Generating trace for {date}...")
+        # Using the range of values makes it difficult to tell what's going on.
+        mean = df["cases_per_capita"].mean()
+        median = df["cases_per_capita"].median()
+        stddev = df["cases_per_capita"].std()
+
+        hovertemplate = "%{text}" \
+                        f"<extra><b>Case Data for {date}</b><br>" \
+                        f"Mean Cases Per Capita: {mean}<br>" \
+                        f"Median Cases Per Capita: {median}<br>" \
+                        f"STDDev: {stddev}</extra>"
         fig.add_trace(go.Choropleth(geojson=counties,
                                     name=date,
                                     locations=df["location"],
                                     z=df["cases_per_capita"],
+                                    zmax=mean+stddev, zmin=max(mean-stddev, 0.0),
                                     text=df["text"],
-                                    colorbar_title="Cases Per Capita"))
-    fig.update_layout(geo_scope="usa")
+                                    hovertemplate=hovertemplate,
+                                    colorbar_title="Cases Per Capita",
+                                    # Portland and Temps offer the best visualizations IME
+                                    colorscale="Portland"))
+    fig.update_layout(geo_scope="usa",
+                      title_text="US COVID-19 Cases Per Capita<br>(Hover for more detail)",
+                      annotations=[{ "x": 0.55,
+                                     "y": 0.05,
+                                     "xref": "paper",
+                                     "yref": "paper",
+                                     "text": "Maps by <a href='mailto:AdamJohnso@gmail.com'>Adam Johnson</a>. " \
+                                             "<a href='https://github.com/Hoikas/covid19'>(Source)</a><br>" \
+
+                                             "Data from <a href='https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html'>" \
+                                             "The New York Times</a>, based on reports from state and local health agencies. " \
+                                             "<a href='https://github.com/nytimes/covid-19-data'>(Source)</a>",
+                                     "showarrow": False}])
 
     # Slider control
     data = fig.data
@@ -253,7 +316,7 @@ def _generate_graph(args, config, data_path):
         output_path = Path(args.dest)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with output_path.open("w") as fp:
-            pio.write_html(fig, fp)
+            fig.write_html(fp)
     else:
         logging.debug("Showing figure...")
         fig.show()

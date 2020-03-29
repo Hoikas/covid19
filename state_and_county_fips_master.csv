@@ -1,5 +1,5 @@
 fips,name,state
-1000,ALABAMA,NA
+1000,ALABAMA,AL
 1001,Autauga County,AL
 1003,Baldwin County,AL
 1005,Barbour County,AL
@@ -67,7 +67,7 @@ fips,name,state
 1129,Washington County,AL
 1131,Wilcox County,AL
 1133,Winston County,AL
-2000,ALASKA,NA
+2000,ALASKA,AK
 2013,Aleutians East Borough,AK
 2016,Aleutians West Census Area,AK
 2020,Anchorage Municipality,AK
@@ -97,7 +97,7 @@ fips,name,state
 2275,Wrangell City and Borough,AK
 2282,Yakutat City and Borough,AK
 2290,Yukon-Koyukuk Census Area,AK
-4000,ARIZONA,NA
+4000,ARIZONA,AZ
 4001,Apache County,AZ
 4003,Cochise County,AZ
 4005,Coconino County,AZ
@@ -113,7 +113,7 @@ fips,name,state
 4023,Santa Cruz County,AZ
 4025,Yavapai County,AZ
 4027,Yuma County,AZ
-5000,ARKANSAS,NA
+5000,ARKANSAS,AR
 5001,Arkansas County,AR
 5003,Ashley County,AR
 5005,Baxter County,AR
@@ -189,7 +189,7 @@ fips,name,state
 5145,White County,AR
 5147,Woodruff County,AR
 5149,Yell County,AR
-6000,CALIFORNIA,NA
+6000,CALIFORNIA,CA
 6001,Alameda County,CA
 6003,Alpine County,CA
 6005,Amador County,CA
@@ -248,7 +248,7 @@ fips,name,state
 6111,Ventura County,CA
 6113,Yolo County,CA
 6115,Yuba County,CA
-8000,COLORADO,NA
+8000,COLORADO,CO
 8001,Adams County,CO
 8003,Alamosa County,CO
 8005,Arapahoe County,CO
@@ -313,7 +313,7 @@ fips,name,state
 8121,Washington County,CO
 8123,Weld County,CO
 8125,Yuma County,CO
-9000,CONNECTICUT,NA
+9000,CONNECTICUT,CT
 9001,Fairfield County,CT
 9003,Hartford County,CT
 9005,Litchfield County,CT
@@ -322,13 +322,13 @@ fips,name,state
 9011,New London County,CT
 9013,Tolland County,CT
 9015,Windham County,CT
-10000,DELAWARE,NA
+10000,DELAWARE,DE
 10001,Kent County,DE
 10003,New Castle County,DE
 10005,Sussex County,DE
-11000,DISTRICT OF COLUMBIA,NA
+11000,DISTRICT OF COLUMBIA,DC
 11001,District of Columbia,DC
-12000,FLORIDA,NA
+12000,FLORIDA,FL
 12001,Alachua County,FL
 12003,Baker County,FL
 12005,Bay County,FL
@@ -396,7 +396,7 @@ fips,name,state
 12129,Wakulla County,FL
 12131,Walton County,FL
 12133,Washington County,FL
-13000,GEORGIA,NA
+13000,GEORGIA,GA
 13001,Appling County,GA
 13003,Atkinson County,GA
 13005,Bacon County,GA
@@ -556,13 +556,13 @@ fips,name,state
 13317,Wilkes County,GA
 13319,Wilkinson County,GA
 13321,Worth County,GA
-15000,HAWAII,NA
+15000,HAWAII,HI
 15001,Hawaii County,HI
 15003,Honolulu County,HI
 15005,Kalawao County,HI
 15007,Kauai County,HI
 15009,Maui County,HI
-16000,IDAHO,NA
+16000,IDAHO,ID
 16001,Ada County,ID
 16003,Adams County,ID
 16005,Bannock County,ID
@@ -607,7 +607,7 @@ fips,name,state
 16083,Twin Falls County,ID
 16085,Valley County,ID
 16087,Washington County,ID
-17000,ILLINOIS,NA
+17000,ILLINOIS,IL
 17001,Adams County,IL
 17003,Alexander County,IL
 17005,Bond County,IL
@@ -710,7 +710,7 @@ fips,name,state
 17199,Williamson County,IL
 17201,Winnebago County,IL
 17203,Woodford County,IL
-18000,INDIANA,NA
+18000,INDIANA,IN
 18001,Adams County,IN
 18003,Allen County,IN
 18005,Bartholomew County,IN
@@ -803,7 +803,7 @@ fips,name,state
 18179,Wells County,IN
 18181,White County,IN
 18183,Whitley County,IN
-19000,IOWA,NA
+19000,IOWA,IA
 19001,Adair County,IA
 19003,Adams County,IA
 19005,Allamakee County,IA
@@ -903,7 +903,7 @@ fips,name,state
 19193,Woodbury County,IA
 19195,Worth County,IA
 19197,Wright County,IA
-20000,KANSAS,NA
+20000,KANSAS,KS
 20001,Allen County,KS
 20003,Anderson County,KS
 20005,Atchison County,KS
@@ -1009,7 +1009,7 @@ fips,name,state
 20205,Wilson County,KS
 20207,Woodson County,KS
 20209,Wyandotte County,KS
-21000,KENTUCKY,NA
+21000,KENTUCKY,KY
 21001,Adair County,KY
 21003,Allen County,KY
 21005,Anderson County,KY
@@ -1130,7 +1130,7 @@ fips,name,state
 21235,Whitley County,KY
 21237,Wolfe County,KY
 21239,Woodford County,KY
-22000,LOUISIANA,NA
+22000,LOUISIANA,LA
 22001,Acadia Parish,LA
 22003,Allen Parish,LA
 22005,Ascension Parish,LA
@@ -1195,7 +1195,7 @@ fips,name,state
 22123,West Carroll Parish,LA
 22125,West Feliciana Parish,LA
 22127,Winn Parish,LA
-23000,MAINE,NA
+23000,MAINE,ME
 23001,Androscoggin County,ME
 23003,Aroostook County,ME
 23005,Cumberland County,ME
@@ -1212,7 +1212,7 @@ fips,name,state
 23027,Waldo County,ME
 23029,Washington County,ME
 23031,York County,ME
-24000,MARYLAND,NA
+24000,MARYLAND,MD
 24001,Allegany County,MD
 24003,Anne Arundel County,MD
 24005,Baltimore County,MD
@@ -1237,7 +1237,7 @@ fips,name,state
 24045,Wicomico County,MD
 24047,Worcester County,MD
 24510,Baltimore city,MD
-25000,MASSACHUSETTS,NA
+25000,MASSACHUSETTS,MA
 25001,Barnstable County,MA
 25003,Berkshire County,MA
 25005,Bristol County,MA
@@ -1252,7 +1252,7 @@ fips,name,state
 25023,Plymouth County,MA
 25025,Suffolk County,MA
 25027,Worcester County,MA
-26000,MICHIGAN,NA
+26000,MICHIGAN,MI
 26001,Alcona County,MI
 26003,Alger County,MI
 26005,Allegan County,MI
@@ -1336,7 +1336,7 @@ fips,name,state
 26161,Washtenaw County,MI
 26163,Wayne County,MI
 26165,Wexford County,MI
-27000,MINNESOTA,NA
+27000,MINNESOTA,MN
 27001,Aitkin County,MN
 27003,Anoka County,MN
 27005,Becker County,MN
@@ -1424,7 +1424,7 @@ fips,name,state
 27169,Winona County,MN
 27171,Wright County,MN
 27173,Yellow Medicine County,MN
-28000,MISSISSIPPI,NA
+28000,MISSISSIPPI,MS
 28001,Adams County,MS
 28003,Alcorn County,MS
 28005,Amite County,MS
@@ -1507,7 +1507,7 @@ fips,name,state
 28159,Winston County,MS
 28161,Yalobusha County,MS
 28163,Yazoo County,MS
-29000,MISSOURI,NA
+29000,MISSOURI,MO
 29001,Adair County,MO
 29003,Andrew County,MO
 29005,Atchison County,MO
@@ -1623,7 +1623,7 @@ fips,name,state
 29227,Worth County,MO
 29229,Wright County,MO
 29510,St. Louis city,MO
-30000,MONTANA,NA
+30000,MONTANA,MT
 30001,Beaverhead County,MT
 30003,Big Horn County,MT
 30005,Blaine County,MT
@@ -1680,7 +1680,7 @@ fips,name,state
 30107,Wheatland County,MT
 30109,Wibaux County,MT
 30111,Yellowstone County,MT
-31000,NEBRASKA,NA
+31000,NEBRASKA,NE
 31001,Adams County,NE
 31003,Antelope County,NE
 31005,Arthur County,NE
@@ -1774,7 +1774,7 @@ fips,name,state
 31181,Webster County,NE
 31183,Wheeler County,NE
 31185,York County,NE
-32000,NEVADA,NA
+32000,NEVADA,NV
 32001,Churchill County,NV
 32003,Clark County,NV
 32005,Douglas County,NV
@@ -1792,7 +1792,7 @@ fips,name,state
 32031,Washoe County,NV
 32033,White Pine County,NV
 32510,Carson City,NV
-33000,NEW HAMPSHIRE,NA
+33000,NEW HAMPSHIRE,NH
 33001,Belknap County,NH
 33003,Carroll County,NH
 33005,Cheshire County,NH
@@ -1803,7 +1803,7 @@ fips,name,state
 33015,Rockingham County,NH
 33017,Strafford County,NH
 33019,Sullivan County,NH
-34000,NEW JERSEY,NA
+34000,NEW JERSEY,NJ
 34001,Atlantic County,NJ
 34003,Bergen County,NJ
 34005,Burlington County,NJ
@@ -1825,7 +1825,7 @@ fips,name,state
 34037,Sussex County,NJ
 34039,Union County,NJ
 34041,Warren County,NJ
-35000,NEW MEXICO,NA
+35000,NEW MEXICO,NM
 35001,Bernalillo County,NM
 35003,Catron County,NM
 35005,Chaves County,NM
@@ -1859,7 +1859,7 @@ fips,name,state
 35057,Torrance County,NM
 35059,Union County,NM
 35061,Valencia County,NM
-36000,NEW YORK,NA
+36000,NEW YORK,NY
 36001,Albany County,NY
 36003,Allegany County,NY
 36005,Bronx County,NY
@@ -1922,7 +1922,7 @@ fips,name,state
 36119,Westchester County,NY
 36121,Wyoming County,NY
 36123,Yates County,NY
-37000,NORTH CAROLINA,NA
+37000,NORTH CAROLINA,NC
 37001,Alamance County,NC
 37003,Alexander County,NC
 37005,Alleghany County,NC
@@ -2023,7 +2023,7 @@ fips,name,state
 37195,Wilson County,NC
 37197,Yadkin County,NC
 37199,Yancey County,NC
-38000,NORTH DAKOTA,NA
+38000,NORTH DAKOTA,ND
 38001,Adams County,ND
 38003,Barnes County,ND
 38005,Benson County,ND
@@ -2077,7 +2077,7 @@ fips,name,state
 38101,Ward County,ND
 38103,Wells County,ND
 38105,Williams County,ND
-39000,OHIO,NA
+39000,OHIO,OH
 39001,Adams County,OH
 39003,Allen County,OH
 39005,Ashland County,OH
@@ -2166,7 +2166,7 @@ fips,name,state
 39171,Williams County,OH
 39173,Wood County,OH
 39175,Wyandot County,OH
-40000,OKLAHOMA,NA
+40000,OKLAHOMA,OK
 40001,Adair County,OK
 40003,Alfalfa County,OK
 40005,Atoka County,OK
@@ -2244,7 +2244,7 @@ fips,name,state
 40149,Washita County,OK
 40151,Woods County,OK
 40153,Woodward County,OK
-41000,OREGON,NA
+41000,OREGON,OR
 41001,Baker County,OR
 41003,Benton County,OR
 41005,Clackamas County,OR
@@ -2281,7 +2281,7 @@ fips,name,state
 41067,Washington County,OR
 41069,Wheeler County,OR
 41071,Yamhill County,OR
-42000,PENNSYLVANIA,NA
+42000,PENNSYLVANIA,PA
 42001,Adams County,PA
 42003,Allegheny County,PA
 42005,Armstrong County,PA
@@ -2349,13 +2349,13 @@ fips,name,state
 42129,Westmoreland County,PA
 42131,Wyoming County,PA
 42133,York County,PA
-44000,RHODE ISLAND,NA
+44000,RHODE ISLAND,RI
 44001,Bristol County,RI
 44003,Kent County,RI
 44005,Newport County,RI
 44007,Providence County,RI
 44009,Washington County,RI
-45000,SOUTH CAROLINA,NA
+45000,SOUTH CAROLINA,SC
 45001,Abbeville County,SC
 45003,Aiken County,SC
 45005,Allendale County,SC
@@ -2402,7 +2402,7 @@ fips,name,state
 45087,Union County,SC
 45089,Williamsburg County,SC
 45091,York County,SC
-46000,SOUTH DAKOTA,NA
+46000,SOUTH DAKOTA,SD
 46003,Aurora County,SD
 46005,Beadle County,SD
 46007,Bennett County,SD
@@ -2469,7 +2469,7 @@ fips,name,state
 46129,Walworth County,SD
 46135,Yankton County,SD
 46137,Ziebach County,SD
-47000,TENNESSEE,NA
+47000,TENNESSEE,TN
 47001,Anderson County,TN
 47003,Bedford County,TN
 47005,Benton County,TN
@@ -2565,7 +2565,7 @@ fips,name,state
 47185,White County,TN
 47187,Williamson County,TN
 47189,Wilson County,TN
-48000,TEXAS,NA
+48000,TEXAS,TX
 48001,Anderson County,TX
 48003,Andrews County,TX
 48005,Angelina County,TX
@@ -2820,7 +2820,7 @@ fips,name,state
 48503,Young County,TX
 48505,Zapata County,TX
 48507,Zavala County,TX
-49000,UTAH,NA
+49000,UTAH,UT
 49001,Beaver County,UT
 49003,Box Elder County,UT
 49005,Cache County,UT
@@ -2850,7 +2850,7 @@ fips,name,state
 49053,Washington County,UT
 49055,Wayne County,UT
 49057,Weber County,UT
-50000,VERMONT,NA
+50000,VERMONT,VT
 50001,Addison County,VT
 50003,Bennington County,VT
 50005,Caledonia County,VT
@@ -2865,7 +2865,7 @@ fips,name,state
 50023,Washington County,VT
 50025,Windham County,VT
 50027,Windsor County,VT
-51000,VIRGINIA,NA
+51000,VIRGINIA,VA
 51001,Accomack County,VA
 51003,Albemarle County,VA
 51005,Alleghany County,VA
@@ -2999,7 +2999,7 @@ fips,name,state
 51820,Waynesboro city,VA
 51830,Williamsburg city,VA
 51840,Winchester city,VA
-53000,WASHINGTON,NA
+53000,WASHINGTON,WA
 53001,Adams County,WA
 53003,Asotin County,WA
 53005,Benton County,WA
@@ -3039,7 +3039,7 @@ fips,name,state
 53073,Whatcom County,WA
 53075,Whitman County,WA
 53077,Yakima County,WA
-54000,WEST VIRGINIA,NA
+54000,WEST VIRGINIA,WV
 54001,Barbour County,WV
 54003,Berkeley County,WV
 54005,Boone County,WV
@@ -3095,7 +3095,7 @@ fips,name,state
 54105,Wirt County,WV
 54107,Wood County,WV
 54109,Wyoming County,WV
-55000,WISCONSIN,NA
+55000,WISCONSIN,WI
 55001,Adams County,WI
 55003,Ashland County,WI
 55005,Barron County,WI
@@ -3168,7 +3168,7 @@ fips,name,state
 55137,Waushara County,WI
 55139,Winnebago County,WI
 55141,Wood County,WI
-56000,WYOMING,NA
+56000,WYOMING,WY
 56001,Albany County,WY
 56003,Big Horn County,WY
 56005,Campbell County,WY

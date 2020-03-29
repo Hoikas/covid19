@@ -108,19 +108,21 @@ def _generate_data(out_path, census_file, fips_file, nytimes_file, pretty=False,
         # and the fips state code for ease of use.
         census_state_name = i_census["STNAME"].strip()
         if census_county_name == census_state_name:
+            title = census_state_name
             the_fips_code = int(i_fips["fips"].strip().zfill(5)[:-3])
+            location = i_fips["state"].strip()
             # include: state name, state fips code, county-link fips code
             fips_codes = [census_state_name, the_fips_code, int(i_fips["fips"].strip().zfill(5))]
             state = True
         else:
             title = f"{census_county_name}, {census_state_name}"
-            the_fips_code = int(i_fips["fips"])
-            fips_codes = [the_fips_code]
+            location = int(i_fips["fips"])
+            fips_codes = [location]
             state = False
 
         pop = int(i_census["POPESTIMATE2019"])
         for fips_code in fips_codes:
-            fips_info[fips_code] = { "fips_code": the_fips_code,
+            fips_info[fips_code] = { "location": location,
                                      "population": pop,
                                      "state": state,
                                      "title": title }
@@ -176,7 +178,7 @@ def _generate_data(out_path, census_file, fips_file, nytimes_file, pretty=False,
 
         state_datum = date_data[state_name]
         state_datum["title"] = state_name
-        state_datum["location"] = fips_info[state_name]["fips_code"]
+        state_datum["location"] = fips_info[state_name]["location"]
         state_datum["total_cases"] += int(i["cases"])
         state_datum["total_deaths"] += int(i["deaths"])
 
@@ -189,7 +191,10 @@ def _generate_data(out_path, census_file, fips_file, nytimes_file, pretty=False,
             for i in all_locations - our_locations:
                 info = fips_info[i]
                 zerofill = date_data[i]
-                zerofill["location"] = str(i).zfill(2 if info["state"] else 5)
+                if info["state"]:
+                    zerofill["location"] = info["location"]
+                else:
+                    zerofill["location"] = str(i).zfill(5)
                 zerofill["title"] = info["title"]
                 zerofill["total_cases"] = 0
                 zerofill["total_deaths"] = 0

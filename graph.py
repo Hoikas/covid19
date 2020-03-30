@@ -352,7 +352,11 @@ def _generate_choropleth_traces(fig, data, geojson_url, title, zkey, row, col, u
             zmax = mean + stddev
             zmin = max(mean-stddev, 0.0)
         else:
-            zmax, zmin = None, None
+            zmax = df[zkey].max()
+            # Prevents a negative scale from appearing
+            if zmax == 0.0:
+                zmax = 1.0
+            zmin = df[zkey].min()
 
         trace = fig.add_choroplethmapbox(geojson=geojson_url,
                                          name=date,

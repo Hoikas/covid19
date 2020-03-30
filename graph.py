@@ -163,19 +163,23 @@ def _generate_data(out_path, census_file, fips_file, nytimes_file, pretty=False,
         date_data = data[i["date"].strip()]
         if fips:
             for fips_code in fips:
+                county_info = fips_info[fips_code]
                 county_datum = date_data[fips_code]
                 # Plotly seems to have issues with 4 digit county codes
                 county_datum["location"] = str(fips_code).zfill(2 if state else 5)
-                county_datum["title"] = fips_info[fips_code]["title"]
+                county_datum["population"] = county_info["population"]
+                county_datum["title"] = county_info["title"]
                 county_datum["total_cases"] += int(i["cases"])
                 county_datum["total_deaths"] += int(i["deaths"])
         elif i["county"].lower() != "unknown":
             # don't whine on "unknown" - we know.
             logging.warning(f"No FIPS code for datum {i}")
 
+        state_info = fips_info[state_name]
         state_datum = date_data[state_name]
         state_datum["title"] = state_name
-        state_datum["location"] = fips_info[state_name]["location"]
+        state_datum["population"] = state_info["population"]
+        state_datum["location"] = state_info["location"]
         state_datum["total_cases"] += int(i["cases"])
         state_datum["total_deaths"] += int(i["deaths"])
 
@@ -192,21 +196,11 @@ def _generate_data(out_path, census_file, fips_file, nytimes_file, pretty=False,
                     zerofill["location"] = info["location"]
                 else:
                     zerofill["location"] = str(i).zfill(5)
+
+                zerofill["population"] = info["population"]
                 zerofill["title"] = info["title"]
                 zerofill["total_cases"] = 0
                 zerofill["total_deaths"] = 0
-
-    # Calculate per capita
-    logging.debug("Calculating per capita rates...")
-    for location, datum in itertools.chain.from_iterable((i.items() for i in data.values())):
-        if location in fips_info:
-            pop = fips_info[location]["population"]
-            datum["population"] = pop
-            datum["cases_per_capita"] = datum["total_cases"] / pop
-            datum["deaths_per_capita"] = datum["total_deaths"] / pop
-            datum["mortality"] = (datum["deaths_per_capita"] / datum["cases_per_capita"]) if datum["cases_per_capita"] != 0.0 else 0.0
-        else:
-            logging.warning(f"No population available for {location}")
 
     logging.debug("Writing JSON to disk...")
     for date, date_data in data.items():
@@ -252,22 +246,29 @@ def _generate_graph(args, config, data_path):
                            f"Cases Per Capita: {x['cases_per_capita']}<br>" \
                            f"Total Deaths: {x['total_deaths']}<br>" \
                            f"Deaths Per Capita: {x['deaths_per_capita']}<br>" \
-                           f"Fatality Rate: {round(x['mortality'] * 2, 2)}%"
+                           f"Fatality Rate: {round(x['fatality_rate'] * 2, 2)}%"
     apply_log = lambda value, base: 0 if not value else log(value, base)
     county_geojson = config["map"]["county_geojson"]
 
     # Each JSON file in the data path is a trace on the figure. The slider will allow us to select
     # which trace the user is viewing.
-    logging.debug("Loading JSON...")
+    logging.debug("Loading data frames..")
     for i in sorted(data_path.glob("*.json")):
         df = pd.read_json(i, dtype={"location": False})
-
-        # I apologize in advance for this sin.
-        df["text"] = df.apply(make_hover, axis=1)
 
         # Total numbers are exponential, so create log columns for that data
         df["log_cases"] = df["total_cases"].apply(apply_log, base=1000)
         df["log_deaths"] = df["total_deaths"].apply(apply_log, base=1000)
+
+        # Moved rate calculations here for ease of use.
+        df["cases_per_capita"] = df.apply(lambda row: row["total_cases"] / row["population"], axis=1)
+        df["deaths_per_capita"] = df.apply(lambda row: row["total_deaths"] / row["population"], axis=1)
+        df["fatality_rate"] = df.apply(lambda row: 0 if row["total_cases"] == 0 else
+                                                   row["total_deaths"] / row["total_cases"],
+                                       axis=1)
+
+        # I apologize in advance for this sin.
+        df["text"] = df.apply(make_hover, axis=1)
 
         hovertemplate = "%{text}" \
                         f"<extra><b>Case Data for {i.stem}</b><br>" \

@@ -186,7 +186,7 @@ def _generate_data(out_path, census_file, fips_file, nytimes_file, pretty=False,
     # Zero fill
     if not concise:
         logging.debug("Zero filling counties with no cases...")
-        all_locations = frozenset((i for i in fips_info.keys() if isinstance(i, int)))
+        all_locations = frozenset((value["title"] if value["state"] else key for key, value in fips_info.items()))
         for date_data in data.values():
             our_locations = frozenset(date_data.keys())
             for i in all_locations - our_locations:

@@ -239,57 +239,63 @@ def _graph(args, config):
             _generate_graph(args, config, json_path)
 
 def _generate_graph(args, config, data_path):
-    from math import isnan
+    from collections import namedtuple
+    from math import isnan, log
     import pandas as pd
-    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    data = []
+    data_entry = namedtuple("data_entry", ["date", "df", "hovertemplate"])
+    make_hover = lambda x: f"<b>{x['title']}</b><br>" \
+                           f"Population: {int(x['population']) if not isnan(x['population']) else 'NaN'}<br>"  \
+                           f"Total Cases: {x['total_cases']}<br>" \
+                           f"Cases Per Capita: {x['cases_per_capita']}<br>" \
+                           f"Total Deaths: {x['total_deaths']}<br>" \
+                           f"Deaths Per Capita: {x['deaths_per_capita']}<br>" \
+                           f"Fatality Rate: {round(x['mortality'] * 2, 2)}%"
+    apply_log = lambda value, base: 0 if not value else log(value, base)
+    county_geojson = config["map"]["county_geojson"]
 
     # Each JSON file in the data path is a trace on the figure. The slider will allow us to select
     # which trace the user is viewing.
-    fig = go.Figure()
+    logging.debug("Loading JSON...")
     for i in sorted(data_path.glob("*.json")):
-        date = i.stem
-        logging.debug(f"Generating trace for {date}...")
         df = pd.read_json(i, dtype={"location": False})
 
         # I apologize in advance for this sin.
-        make_hover = lambda x: f"<b>{x['title']}</b><br>" \
-                               f"Population: {int(x['population']) if not isnan(x['population']) else 'NaN'}<br>"  \
-                               f"Total Cases: {x['total_cases']}<br>" \
-                               f"Cases Per Capita: {x['cases_per_capita']}<br>" \
-                               f"Total Deaths: {x['total_deaths']}<br>" \
-                               f"Deaths Per Capita: {x['deaths_per_capita']}<br>" \
-                               f"Mortality Rate: {round(x['mortality'] * 2, 2)}%"
         df["text"] = df.apply(make_hover, axis=1)
 
-        # Using the range of values makes it difficult to tell what's going on.
-        mean = df["cases_per_capita"].mean()
-        median = df["cases_per_capita"].median()
-        stddev = df["cases_per_capita"].std()
+        # Total numbers are exponential, so create log columns for that data
+        df["log_cases"] = df["total_cases"].apply(apply_log, base=1000)
+        df["log_deaths"] = df["total_deaths"].apply(apply_log, base=1000)
 
         hovertemplate = "%{text}" \
-                        f"<extra><b>Case Data for {date}</b><br>" \
-                        f"Mean Cases Per Capita: {mean}<br>" \
-                        f"Median Cases Per Capita: {median}<br>" \
-                        f"STDDev: {stddev}</extra>"
-        fig.add_trace(go.Choroplethmapbox(geojson=config["map"]["county_geojson"],
-                                          name=date,
-                                          locations=df["location"],
-                                          z=df["cases_per_capita"],
-                                          zmax=mean+stddev, zmin=max(mean-stddev, 0.0),
-                                          text=df["text"],
-                                          hovertemplate=hovertemplate,
-                                          colorbar_title="Cases Per Capita",
-                                          marker_opacity=0.5, marker_line_width=0,
-                                          # Portland and Temps offer the best visualizations IME
-                                          colorscale="Portland"))
+                        f"<extra><b>Case Data for {i.stem}</b><br>" \
+                        f"Mean Cases Per Capita: {df['cases_per_capita'].mean()}<br>" \
+                        f"Median Cases Per Capita: {df['cases_per_capita'].median()}<br>" \
+                        f"STD: {df['cases_per_capita'].std()}<br>" \
+                        f"Mean Total Cases: {df['total_cases'].mean()}<br>" \
+                        f"Median Total Cases: {df['total_cases'].median()}<br>" \
+                        f"STD: {df['total_cases'].std()}</extra>"
+        data.append(data_entry(i.stem, df, hovertemplate))
+
+    # Overall layout looks like this:
+    # (map: cases per capita) (map: total cases)
+    # (annotations)
+    # (slider control)
+    fig = make_subplots(rows=1, cols=2,
+                        specs=[[{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}]])
+    _generate_choropleth_traces(fig, data, county_geojson, "Cases Per Capita", "cases_per_capita",
+                                row=1, col=1)
+    _generate_choropleth_traces(fig, data, county_geojson, "Total Cases (Thousands)", "log_cases",
+                                use_std=False, row=1, col=2)
 
     # I had to change from a choropleth to a choroplethmapbox. Despite the poor documentation of plotly,
     # the difference appears to the that the former uses a webgl powered service known as mapbox.
     # This handles the county geojson much better than the builtin map, though sadly the builtin
     # map lets us zoom in exclusively on the US. If we ever go back to choropleth, set `geo_scope="usa"`
-    fig.update_layout(mapbox_style="carto-positron",
-                      mapbox_zoom=4, mapbox_center = {"lat": 37.0902, "lon": -95.7129},
-                      title_text="US COVID-19 Cases Per Capita<br>(Hover for more detail)",
+    logging.debug("Generating misc layout...")
+    fig.update_layout(title_text="COVID-19 Hotspots",
                       annotations=[{ "x": 0.55,
                                      "y": 0.05,
                                      "xref": "paper",
@@ -301,14 +307,21 @@ def _generate_graph(args, config, data_path):
                                              "The New York Times</a>, based on reports from state and local health agencies. " \
                                              "<a href='https://github.com/nytimes/covid-19-data'>(Source)</a>",
                                      "showarrow": False}])
+    fig.update_mapboxes(style="carto-positron",
+                        center={"lat": 37.0902, "lon": -95.7129},
+                        zoom=3)
 
     # Slider control
-    data = fig.data
-    for i in range(len(data)):
-        data[i].visible = i+1 == len(data)
+    def is_trace_visible(slider_idx, trace_idx):
+        # multiple traces are visible for each slider entry...
+        return slider_idx == trace_idx % len(data)
+
+    for i, fig_datum in enumerate(fig.data):
+        # ugh
+        fig_datum.visible = is_trace_visible(len(data)-1, i)
     date_steps = [{ "method": "restyle",
-                    "args": ["visible", [i==j for j in range(len(data))]],
-                    "label": data[i].name }
+                    "args": ["visible", [is_trace_visible(i, j) for j in range(len(fig.data))]],
+                    "label": data[i].date }
                   for i, date in enumerate(data)]
     fig.update_layout(sliders=[{ "active": len(data)-1,
                                  "steps": date_steps }])
@@ -323,6 +336,37 @@ def _generate_graph(args, config, data_path):
         logging.debug("Showing figure...")
         fig.show()
 
+def _generate_choropleth_traces(fig, data, geojson_url, title, zkey, row, col, use_std=True):
+    import plotly.graph_objects as go
+    logging.debug(f"Generating choropleths for '{title}'")
+
+    # Doggone color bars just appear whereever they please :/
+    x = 0 if col == 1 else 1
+    xanchor = "left" if col == 1 else "right"
+
+    for date, df, hovertemplate in data:
+        if use_std:
+            mean = df[zkey].mean()
+            stddev = df[zkey].std()
+            zmax = mean + stddev
+            zmin = max(mean-stddev, 0.0)
+        else:
+            zmax, zmin = None, None
+
+        trace = fig.add_choroplethmapbox(geojson=geojson_url,
+                                         name=date,
+                                         locations=df["location"],
+                                         z=df[zkey],
+                                         zmax=zmax, zmin=zmin,
+                                         text=df["text"],
+                                         hovertemplate=hovertemplate,
+                                         colorbar_title=title,
+                                         colorbar_x=x,
+                                         colorbar_xanchor=xanchor,
+                                         marker_opacity=0.5, marker_line_width=0,
+                                         # Portland and Temps offer the best visualizations IME
+                                         colorscale="Portland",
+                                         row=row, col=col)
 
 if __name__ == "__main__":
     args = _parser.parse_args()

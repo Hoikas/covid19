@@ -239,7 +239,7 @@ def _generate_graph(args, config, data_path):
     from plotly.subplots import make_subplots
 
     data = []
-    data_entry = namedtuple("data_entry", ["date", "df", "hovertemplate"])
+    data_entry = namedtuple("data_entry", ["date", "county_df", "county_dedup_df", "states_df", "hovertemplate"])
     make_hover = lambda x: f"<b>{x['title']}</b><br>" \
                            f"Population: {int(x['population']) if not isnan(x['population']) else 'NaN'}<br>"  \
                            f"Total Cases: {x['total_cases']}<br>" \
@@ -252,9 +252,11 @@ def _generate_graph(args, config, data_path):
 
     # Each JSON file in the data path is a trace on the figure. The slider will allow us to select
     # which trace the user is viewing.
-    logging.debug("Loading data frames..")
+    logging.info("Loading graph data frames..")
     for i in sorted(data_path.glob("*.json")):
+        logging.debug(f"Reading {i.name}...")
         df = pd.read_json(i, dtype={"location": False})
+        logging.debug("... Processing")
 
         # Total numbers are exponential, so create log columns for that data
         df["log_cases"] = df["total_cases"].apply(apply_log, base=1000)
@@ -270,15 +272,24 @@ def _generate_graph(args, config, data_path):
         # I apologize in advance for this sin.
         df["text"] = df.apply(make_hover, axis=1)
 
+        # Segregate state and county values into their own data frames to prevent statistics duplication.
+        # Rules: states (and potentially countries?) are non-numeric strings
+        #        counties are numeric strings... potentially want to include non-USstate entities as well?
+        states_df = df.query("location.str.isalpha()")
+        county_df = df.query("location.str.isnumeric()")
+
+        # Some counties are duplicated due to the way the NYT reports the data.
+        county_dedup_df = county_df.drop_duplicates("title", inplace=False)
+
         hovertemplate = "%{text}" \
                         f"<extra><b>Case Data for {i.stem}</b><br>" \
-                        f"Mean Cases Per Capita: {df['cases_per_capita'].mean()}<br>" \
-                        f"Median Cases Per Capita: {df['cases_per_capita'].median()}<br>" \
-                        f"STD: {df['cases_per_capita'].std()}<br>" \
-                        f"Mean Total Cases: {df['total_cases'].mean()}<br>" \
-                        f"Median Total Cases: {df['total_cases'].median()}<br>" \
-                        f"STD: {df['total_cases'].std()}</extra>"
-        data.append(data_entry(i.stem, df, hovertemplate))
+                        f"Mean Cases Per Capita: {county_dedup_df['cases_per_capita'].mean()}<br>" \
+                        f"Median Cases Per Capita: {county_dedup_df['cases_per_capita'].median()}<br>" \
+                        f"STD: {county_dedup_df['cases_per_capita'].std()}<br>" \
+                        f"Mean Total Cases: {county_dedup_df['total_cases'].mean()}<br>" \
+                        f"Median Total Cases: {county_dedup_df['total_cases'].median()}<br>" \
+                        f"STD: {county_dedup_df['total_cases'].std()}</extra>"
+        data.append(data_entry(i.stem, county_df, county_dedup_df, states_df, hovertemplate))
 
     # Overall layout looks like this:
     # (map: cases per capita) (map: total cases)
@@ -286,9 +297,9 @@ def _generate_graph(args, config, data_path):
     # (slider control)
     fig = make_subplots(rows=1, cols=2,
                         specs=[[{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}]])
-    _generate_choropleth_traces(fig, data, county_geojson, "Cases Per Capita", "cases_per_capita",
+    _generate_choropleth_traces(fig, data, "county", county_geojson, "Cases Per Capita", "cases_per_capita",
                                 row=1, col=1)
-    _generate_choropleth_traces(fig, data, county_geojson, "Total Cases (Thousands)", "log_cases",
+    _generate_choropleth_traces(fig, data, "county", county_geojson, "Total Cases (Thousands)", "log_cases",
                                 use_std=False, row=1, col=2)
 
     # I had to change from a choropleth to a choroplethmapbox. Despite the poor documentation of plotly,
@@ -337,7 +348,7 @@ def _generate_graph(args, config, data_path):
         logging.debug("Showing figure...")
         fig.show()
 
-def _generate_choropleth_traces(fig, data, geojson_url, title, zkey, row, col, use_std=True):
+def _generate_choropleth_traces(fig, data, dkey, geojson_url, title, zkey, row, col, use_std=True):
     import plotly.graph_objects as go
     logging.debug(f"Generating choropleths for '{title}'")
 
@@ -345,10 +356,14 @@ def _generate_choropleth_traces(fig, data, geojson_url, title, zkey, row, col, u
     x = 0 if col == 1 else 1
     xanchor = "left" if col == 1 else "right"
 
-    for date, df, hovertemplate in data:
+    for datum in data:
+        df = getattr(datum, f"{dkey}_df")
         if use_std:
-            mean = df[zkey].mean()
-            stddev = df[zkey].std()
+            # Use the de-duplicated dataframe for stats, if available
+            dedup_df = getattr(datum, f"{dkey}_dedup_df", df)
+
+            mean = dedup_df[zkey].mean()
+            stddev = dedup_df[zkey].std()
             zmax = mean + stddev
             zmin = max(mean-stddev, 0.0)
         else:
@@ -359,12 +374,12 @@ def _generate_choropleth_traces(fig, data, geojson_url, title, zkey, row, col, u
             zmin = df[zkey].min()
 
         trace = fig.add_choroplethmapbox(geojson=geojson_url,
-                                         name=date,
+                                         name=datum.date,
                                          locations=df["location"],
                                          z=df[zkey],
                                          zmax=zmax, zmin=zmin,
                                          text=df["text"],
-                                         hovertemplate=hovertemplate,
+                                         hovertemplate=datum.hovertemplate,
                                          colorbar_title=title,
                                          colorbar_x=x,
                                          colorbar_xanchor=xanchor,

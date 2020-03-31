@@ -330,6 +330,12 @@ def _generate_graph(args, config, data_path):
                         center={"lat": 37.0902, "lon": -95.7129},
                         zoom=3)
 
+    # This is an (I HOPE) attempt to fix the brain-dead resizing plotly does... Mostly because I
+    # want to be able to expand down the page like any other damn web page does. Who in the world
+    # wants their subplots to be rearranged to fit entirely within the window height??? That makes
+    # sense if you have ONE row... but we have more than that!
+    fig.update_layout(height=1400)
+
     # Slider control
     def is_trace_visible(slider_idx, trace_idx):
         # multiple traces are visible for each slider entry...

@@ -56,6 +56,11 @@ def _download_csv(**kwargs):
 
     result = {}
     for key, url in kwargs.items():
+        if not url:
+            logging.warning(f"Omitting data source '{key}' -- hope you know what you're doing...")
+            result[key] = None
+            continue
+
         logging.debug(f"Downloading {url}")
         with urllib.request.urlopen(url) as response:
             fp = tempfile.SpooledTemporaryFile(mode="w+")
@@ -68,12 +73,13 @@ def _download_csv(**kwargs):
 def _fetch_csv(config):
     # Pull down the required remote CSV files
     csv_files = _download_csv(census=config["data"]["uscensus"],
+                              ecdc=config["data"]["ecdc"],
                               nyt_county=config["data"]["covid19"])
     # original is out-of-date, so use in-repo copy
     csv_files["fips"] = open(FIPS_PATH, "r")
     return csv_files
 
-def _generate_data(out_path, census_file, fips_file, nytimes_file, pretty=False, concise=False):
+def _generate_data(out_path, ecdc_file, census_file, fips_file, nytimes_file, pretty=False, concise=False):
     import csv
     from collections import defaultdict
     from functools import partial
@@ -202,6 +208,46 @@ def _generate_data(out_path, census_file, fips_file, nytimes_file, pretty=False,
                 zerofill["total_cases"] = 0
                 zerofill["total_deaths"] = 0
 
+    # Add in optional international data
+    if ecdc_file:
+        logging.debug("Loading international data...")
+        ecdc = csv.DictReader(ecdc_file)
+
+        # Bad news, old chap. This data is per-day, not cumulative. Therefore, we will need
+        # to iterate through it twice since it is stored backwards. Sigh...
+        countries = set()
+        for i in ecdc:
+            # oddly, the EU does not use ISO 8601
+            date = f"{i['year']}-{i['month'].zfill(2)}-{i['day'].zfill(2)}"
+            if date not in data:
+                # don't want any data for when no US detail is available
+                continue
+
+            iso3 = i["countryterritoryCode"]
+            countries.add(iso3)
+            if iso3 == "USA":
+                # we already have plenty of USA data, thank you very much.
+                # fixme: when the proper merged geojson file is made, this can be removed.
+                continue
+
+            datum = data[date][iso3]
+            datum["location"] = iso3
+            # Some countries don't have population data? Interesting.
+            if i["popData2018"].isnumeric():
+                datum["population"] = int(i["popData2018"])
+            datum["title"] = i["countriesAndTerritories"].replace('_', ' ')
+            datum["total_cases"] = int(i["cases"])
+            datum["total_deaths"] = int(i["deaths"])
+
+        counter = defaultdict(partial(defaultdict, int))
+        for date_data in (data[date] for date in sorted(data)):
+            for datum, country_counter in ((date_data[country], counter[country]) for country in countries
+                                                                                  if country in date_data):
+                country_counter["total_cases"] += datum["total_cases"]
+                country_counter["total_deaths"] += datum["total_deaths"]
+                datum["total_cases"] = country_counter["total_cases"]
+                datum["total_deaths"] = country_counter["total_deaths"]
+
     logging.debug("Writing JSON to disk...")
     for date, date_data in data.items():
         # For now, state and county data are dumped to the same json file.
@@ -218,7 +264,8 @@ def _dump_json(args, config):
 
     csv_files = _fetch_csv(config)
     out_path.mkdir(parents=True, exist_ok=True)
-    _generate_data(out_path, csv_files["census"], csv_files["fips"], csv_files["nyt_county"], args.pretty, args.no_zerofill)
+    _generate_data(out_path, csv_files["ecdc"], csv_files["census"], csv_files["fips"],
+                   csv_files["nyt_county"], args.pretty, args.no_zerofill)
 
 
 def _graph(args, config):
@@ -229,7 +276,7 @@ def _graph(args, config):
         csv_files = _fetch_csv(config)
         with tempfile.TemporaryDirectory(prefix="covid19") as td:
             json_path = Path(td)
-            _generate_data(json_path, csv_files["census"], csv_files["fips"], csv_files["nyt_county"])
+            _generate_data(json_path, csv_files["ecdc"], csv_files["census"], csv_files["fips"], csv_files["nyt_county"])
             _generate_graph(args, config, json_path)
 
 def _generate_graph(args, config, data_path):
@@ -239,7 +286,7 @@ def _generate_graph(args, config, data_path):
     from plotly.subplots import make_subplots
 
     data = []
-    data_entry = namedtuple("data_entry", ["date", "county_df", "county_dedup_df", "states_df", "hovertemplate"])
+    data_entry = namedtuple("data_entry", ["date", "df", "hovertemplate", "stats"])
     make_hover = lambda x: f"<b>{x['title']}</b><br>" \
                            f"Population: {int(x['population']) if not isnan(x['population']) else 'NaN'}<br>"  \
                            f"Total Cases: {x['total_cases']}<br>" \
@@ -247,9 +294,15 @@ def _generate_graph(args, config, data_path):
                            f"Total Deaths: {x['total_deaths']}<br>" \
                            f"Deaths Per Capita: {x['deaths_per_capita']}<br>" \
                            f"Fatality Rate: {round(x['fatality_rate'] * 2, 2)}%"
-    apply_log = lambda value, base: 0 if not value else log(value, base)
+    apply_log = lambda value, base: 0 if value <= 0 else log(value, base)
     county_geojson = config["map"]["county_geojson"]
     state_geojson = config["map"]["state_geojson"]
+
+    def make_stats_dict(*args, **kwargs):
+        stats_entry = namedtuple("stats_entry", ["max", "mean", "median", "min", "std"])
+        make_stats = lambda x: stats_entry(x.max(), x.mean(), x.median(), x.min(), x.std())
+        return { i: { j: make_stats(frame[j]) for j in args } for i, frame in kwargs.items() }
+
 
     # Each JSON file in the data path is a trace on the figure. The slider will allow us to select
     # which trace the user is viewing.
@@ -274,23 +327,33 @@ def _generate_graph(args, config, data_path):
         df["text"] = df.apply(make_hover, axis=1)
 
         # Segregate state and county values into their own data frames to prevent statistics duplication.
-        # Rules: states (and potentially countries?) are non-numeric strings
-        #        counties are numeric strings... potentially want to include non-USstate entities as well?
+        # Rules: states and international countries are non-numeric strings
+        #        counties are numeric strings... Note... including ISO-3 country codes as well...
         states_df = df.query("location.str.isalpha()")
-        county_df = df.query("location.str.isnumeric()")
+        county_df = df.query("location.str.isnumeric() or location.str.len() == 3")
+        world_df = df.query("location.str.isalpha() and location.str.len() == 3")
 
         # Some counties are duplicated due to the way the NYT reports the data.
+        # Keeping this separate incase we start drawing scattermaps.
         county_dedup_df = county_df.drop_duplicates("title", inplace=False)
 
+        # Nuke international countries for stats
+        county_stats_df = county_dedup_df.query("location.str.isnumeric()")
+        states_stats_df = states_df.query("location.str.len() == 2")
+        stats = make_stats_dict("cases_per_capita", "log_cases", "total_cases",
+                                county=county_stats_df, states=states_stats_df, world=world_df)
+
         hovertemplate = "%{text}" \
-                        f"<extra><b>Case Data for {i.stem}</b><br>" \
-                        f"Mean Cases Per Capita: {county_dedup_df['cases_per_capita'].mean()}<br>" \
-                        f"Median Cases Per Capita: {county_dedup_df['cases_per_capita'].median()}<br>" \
-                        f"STD: {county_dedup_df['cases_per_capita'].std()}<br>" \
-                        f"Mean Total Cases: {county_dedup_df['total_cases'].mean()}<br>" \
-                        f"Median Total Cases: {county_dedup_df['total_cases'].median()}<br>" \
-                        f"STD: {county_dedup_df['total_cases'].std()}</extra>"
-        data.append(data_entry(i.stem, county_df, county_dedup_df, states_df, hovertemplate))
+                        f"<extra><b>US Case Data for {i.stem}</b><br>" \
+                        f"Mean Cases Per Capita: {stats['county']['cases_per_capita'].mean}<br>" \
+                        f"Median Cases Per Capita: {stats['county']['cases_per_capita'].median}<br>" \
+                        f"STD: {stats['county']['cases_per_capita'].std}<br>" \
+                        f"Mean Total Cases: {stats['county']['total_cases'].mean}<br>" \
+                        f"Median Total Cases: {stats['county']['total_cases'].median}<br>" \
+                        f"STD: {stats['county']['total_cases'].std}</extra>"
+        data.append(data_entry(i.stem, dict(county=county_df, county_dedup=county_dedup_df,
+                                            states=states_df, world=world_df),
+                               hovertemplate, stats))
 
     # Overall layout looks like this:
     # (map: county cases per capita) (map: county total cases)
@@ -316,15 +379,19 @@ def _generate_graph(args, config, data_path):
     logging.debug("Generating misc layout...")
     fig.update_layout(title_text="COVID-19 Hotspots",
                       annotations=[{ "x": 0.50,
-                                     "y": -0.04,
+                                     "y": -0.045,
                                      "xref": "paper",
                                      "yref": "paper",
                                      "text": "Maps by <a href='mailto:AdamJohnso@gmail.com'>Adam Johnson</a>. " \
                                              "<a href='https://github.com/Hoikas/covid19'>(Source)</a><br>" \
 
-                                             "Data from <a href='https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html'>" \
+                                             "US Data from <a href='https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html'>" \
                                              "The New York Times</a>, based on reports from state and local health agencies. " \
-                                             "<a href='https://github.com/nytimes/covid-19-data'>(Source)</a>",
+                                             "<a href='https://github.com/nytimes/covid-19-data'>(Source)</a><br>" \
+
+                                             "World Data from the <a href=" \
+                                             "'https://www.ecdc.europa.eu/en/publications-data/download-todays-data-geographic-distribution-covid-19-cases-worldwide'>" \
+                                             "European Centre for Disease Prevention and Control</a>.",
                                      "showarrow": False}])
     fig.update_mapboxes(style="carto-positron",
                         center={"lat": 37.0902, "lon": -95.7129},
@@ -379,22 +446,19 @@ def _generate_choropleth_traces(fig, data, dkey, geojson_url, title, zkey, row, 
     colorbar["title"] = title
 
     for datum in data:
-        df = getattr(datum, f"{dkey}_df")
         if use_std:
-            # Use the de-duplicated dataframe for stats, if available
-            dedup_df = getattr(datum, f"{dkey}_dedup_df", df)
-
-            mean = dedup_df[zkey].mean()
-            stddev = dedup_df[zkey].std()
+            mean = datum.stats[dkey][zkey].mean
+            stddev = datum.stats[dkey][zkey].std
             zmax = mean + stddev
             zmin = max(mean-stddev, 0.0)
         else:
-            zmax = df[zkey].max()
+            zmax = datum.stats[dkey][zkey].max
             # Prevents a negative scale from appearing
             if zmax == 0.0:
                 zmax = 1.0
-            zmin = df[zkey].min()
+            zmin = datum.stats[dkey][zkey].min
 
+        df = datum.df[dkey]
         trace = fig.add_choroplethmapbox(geojson=geojson_url,
                                          name=datum.date,
                                          locations=df["location"],

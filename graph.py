@@ -225,11 +225,6 @@ def _generate_data(out_path, ecdc_file, census_file, fips_file, nytimes_file, pr
 
             iso3 = i["countryterritoryCode"]
             countries.add(iso3)
-            if iso3 == "USA":
-                # we already have plenty of USA data, thank you very much.
-                # fixme: when the proper merged geojson file is made, this can be removed.
-                continue
-
             datum = data[date][iso3]
             datum["location"] = iso3
             # Some countries don't have population data? Interesting.
@@ -281,7 +276,7 @@ def _graph(args, config):
 
 def _generate_graph(args, config, data_path):
     from collections import namedtuple
-    from math import isnan, log
+    from math import isnan, log10
     import pandas as pd
     from plotly.subplots import make_subplots
 
@@ -294,9 +289,8 @@ def _generate_graph(args, config, data_path):
                            f"Total Deaths: {x['total_deaths']}<br>" \
                            f"Deaths Per Capita: {x['deaths_per_capita']}<br>" \
                            f"Fatality Rate: {round(x['fatality_rate'] * 2, 2)}%"
-    apply_log = lambda value, base: 0 if value <= 0 else log(value, base)
-    county_geojson = config["map"]["county_geojson"]
-    state_geojson = config["map"]["state_geojson"]
+    apply_log = lambda value: 0 if value <= 0 else log10(value)
+    default_geojson = config["map"]["county_geojson"]
 
     def make_stats_dict(*args, **kwargs):
         stats_entry = namedtuple("stats_entry", ["max", "mean", "median", "min", "std"])
@@ -313,8 +307,8 @@ def _generate_graph(args, config, data_path):
         logging.debug("... Processing")
 
         # Total numbers are exponential, so create log columns for that data
-        df["log_cases"] = df["total_cases"].apply(apply_log, base=1000)
-        df["log_deaths"] = df["total_deaths"].apply(apply_log, base=1000)
+        df["log_cases"] = df["total_cases"].apply(apply_log)
+        df["log_deaths"] = df["total_deaths"].apply(apply_log)
 
         # Moved rate calculations here for ease of use.
         df["cases_per_capita"] = df.apply(lambda row: row["total_cases"] / row["population"], axis=1)
@@ -340,7 +334,7 @@ def _generate_graph(args, config, data_path):
         # Nuke international countries for stats
         county_stats_df = county_dedup_df.query("location.str.isnumeric()")
         states_stats_df = states_df.query("location.str.len() == 2")
-        stats = make_stats_dict("cases_per_capita", "log_cases", "total_cases",
+        stats = make_stats_dict("cases_per_capita", "deaths_per_capita", "log_cases", "log_deaths", "total_cases",
                                 county=county_stats_df, states=states_stats_df, world=world_df)
 
         hovertemplate = "%{text}" \
@@ -351,57 +345,71 @@ def _generate_graph(args, config, data_path):
                         f"Mean Total Cases: {stats['county']['total_cases'].mean}<br>" \
                         f"Median Total Cases: {stats['county']['total_cases'].median}<br>" \
                         f"STD: {stats['county']['total_cases'].std}</extra>"
-        data.append(data_entry(i.stem, dict(county=county_df, county_dedup=county_dedup_df,
-                                            states=states_df, world=world_df),
-                               hovertemplate, stats))
+
+        # NOTE: reusing the same data frames so we can just swap out the geojson for different views.
+        #       all the above chicanery was for the statistics.
+        data.append(data_entry(i.stem, dict(county=df, states=df, world=df), hovertemplate, stats))
 
     # Overall layout looks like this:
-    # (map: county cases per capita) (map: county total cases)
-    # (map: state cases per capita) (map: state total cases)
+    # (map: cases per capita) (map: log total cases)
+    # (map: deaths per capita) (map: log total deaths)
     # (annotations)
     # (slider control)
-    fig = make_subplots(rows=2, cols=2,
+    fig = make_subplots(rows=2, cols=2, vertical_spacing=0.05,
                         specs=[[{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}],
                                [{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}]])
-    _generate_choropleth_traces(fig, data, "county", county_geojson, "Cases Per Capita by County", "cases_per_capita",
+    _generate_choropleth_traces(fig, data, "county", default_geojson, "Cases Per Capita", "cases_per_capita",
                                 row=1, col=1)
-    _generate_choropleth_traces(fig, data, "county", county_geojson, "Total Cases (log1000) by County", "log_cases",
+    _generate_choropleth_traces(fig, data, "county", default_geojson, "Total Cases (log10)", "log_cases",
                                 use_std=False, row=1, col=2)
-    _generate_choropleth_traces(fig, data, "states", state_geojson, "Cases Per Capita by State", "cases_per_capita",
+    _generate_choropleth_traces(fig, data, "county", default_geojson, "Deaths Per Capita", "deaths_per_capita",
                                 row=2, col=1)
-    _generate_choropleth_traces(fig, data, "states", state_geojson, "Total Cases (log1000) by State", "log_cases",
+    _generate_choropleth_traces(fig, data, "county", default_geojson, "Total Deaths (log10)", "log_deaths",
                                 use_std=False, row=2, col=2)
 
-    # I had to change from a choropleth to a choroplethmapbox. Despite the poor documentation of plotly,
-    # the difference appears to the that the former uses a webgl powered service known as mapbox.
-    # This handles the county geojson much better than the builtin map, though sadly the builtin
-    # map lets us zoom in exclusively on the US. If we ever go back to choropleth, set `geo_scope="usa"`
     logging.debug("Generating misc layout...")
-    fig.update_layout(title_text="COVID-19 Hotspots",
-                      annotations=[{ "x": 0.50,
-                                     "y": -0.045,
-                                     "xref": "paper",
-                                     "yref": "paper",
-                                     "text": "Maps by <a href='mailto:AdamJohnso@gmail.com'>Adam Johnson</a>. " \
+    fig.update_layout(annotations=[dict(x=0.50, y=1.1,
+                                        xref="paper", yref="paper",
+                                        yanchor="top",
+                                        text="COVID-19 Spread Graphs by <a href='mailto:AdamJohnso@gmail.com'>Adam Johnson</a>. " \
                                              "<a href='https://github.com/Hoikas/covid19'>(Source)</a><br>" \
 
                                              "US Data from <a href='https://www.nytimes.com/interactive/2020/us/coronavirus-us-cases.html'>" \
                                              "The New York Times</a>, based on reports from state and local health agencies. " \
                                              "<a href='https://github.com/nytimes/covid-19-data'>(Source)</a><br>" \
 
-                                             "World Data from the <a href=" \
-                                             "'https://www.ecdc.europa.eu/en/publications-data/download-todays-data-geographic-distribution-covid-19-cases-worldwide'>" \
-                                             "European Centre for Disease Prevention and Control</a>.",
-                                     "showarrow": False}])
+                                             "World Data from the <a href='https://www.ecdc.europa.eu/en'>" \
+                                             "European Centre for Disease Prevention and Control</a>. " \
+                                             "<a href='https://www.ecdc.europa.eu/en/publications-data/download-todays-data-geographic-distribution-covid-19-cases-worldwide'>" \
+                                             "(Source)</a>",
+                                        showarrow=False)])
+
+    # I had to change from a choropleth to a choroplethmapbox. Despite the poor documentation of plotly,
+    # the difference appears to the that the former uses a webgl powered service known as mapbox.
+    # This handles the county geojson much better than the builtin map, though sadly the builtin
+    # map lets us zoom in exclusively on the US. If we ever go back to choropleth, set `geo_scope="usa"`
     fig.update_mapboxes(style="carto-positron",
                         center={"lat": 37.0902, "lon": -95.7129},
                         zoom=3)
 
-    # This is an (I HOPE) attempt to fix the brain-dead resizing plotly does... Mostly because I
-    # want to be able to expand down the page like any other damn web page does. Who in the world
-    # wants their subplots to be rearranged to fit entirely within the window height??? That makes
-    # sense if you have ONE row... but we have more than that!
-    fig.update_layout(height=1400)
+    # Map type dropdown ahoy!
+    map_buttons = [
+        dict(args=["geojson", config["map"]["county_geojson"]],
+             label="Show US Counties",
+             method="restyle"),
+        dict(args=["geojson", config["map"]["state_geojson"]],
+             label="Show US States",
+             method="restyle"),
+        dict(args=["geojson", config["map"]["world_geojson"]],
+             label="Show Countries",
+             method="restyle"),
+    ]
+    fig.update_layout(updatemenus=[dict(buttons=map_buttons,
+                                        direction="down",
+                                        showactive=True,
+                                        pad=dict(r=10, t=10),
+                                        x=0.0, y=1.1,
+                                        xanchor="left", yanchor="top")])
 
     # Slider control
     def is_trace_visible(slider_idx, trace_idx):
@@ -411,12 +419,12 @@ def _generate_graph(args, config, data_path):
     for i, fig_datum in enumerate(fig.data):
         # ugh
         fig_datum.visible = is_trace_visible(len(data)-1, i)
-    date_steps = [{ "method": "restyle",
-                    "args": ["visible", [is_trace_visible(i, j) for j in range(len(fig.data))]],
-                    "label": data[i].date }
-                  for i, date in enumerate(data)]
-    fig.update_layout(sliders=[{ "active": len(data)-1,
-                                 "steps": date_steps }])
+    date_steps = [dict(method="restyle",
+                       args=["visible", [is_trace_visible(i, j) for j in range(len(fig.data))]],
+                       label=data[i].date) for i, date in enumerate(data)]
+    fig.update_layout(sliders=[dict(active=len(data)-1,
+                                    steps=date_steps,
+                                    currentvalue=dict(prefix="Showing COVID-19 Data for "))])
 
     if args.dest:
         logging.debug(f"Writing HTML... {args.dest}")
@@ -436,10 +444,10 @@ def _generate_choropleth_traces(fig, data, dkey, geojson_url, title, zkey, row, 
     # Unfortunately, the plotly documentation is vague with NO examples about how to position
     # these ruddy things. This is my best guesswork. If you can fix it to not suck, be my guest...
     colorbars = {
-        (1, 1): dict(x=-0.05, y=0.795, len=0.46),
-        (1, 2): dict(x=0.50, y=0.795, len=0.46),
-        (2, 1): dict(x=-0.05, y=0.226, len=0.46),
-        (2, 2): dict(x=0.50, y=0.226, len=0.46),
+        (1, 1): dict(x=-0.05, y=0.774, len=0.51),
+        (1, 2): dict(x=0.50, y=0.774, len=0.51),
+        (2, 1): dict(x=-0.05, y=0.248, len=0.51),
+        (2, 2): dict(x=0.50, y=0.248, len=0.51),
     }
 
     colorbar = colorbars[(row, col)]

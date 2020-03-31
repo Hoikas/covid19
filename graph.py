@@ -249,6 +249,7 @@ def _generate_graph(args, config, data_path):
                            f"Fatality Rate: {round(x['fatality_rate'] * 2, 2)}%"
     apply_log = lambda value, base: 0 if not value else log(value, base)
     county_geojson = config["map"]["county_geojson"]
+    state_geojson = config["map"]["state_geojson"]
 
     # Each JSON file in the data path is a trace on the figure. The slider will allow us to select
     # which trace the user is viewing.
@@ -292,15 +293,21 @@ def _generate_graph(args, config, data_path):
         data.append(data_entry(i.stem, county_df, county_dedup_df, states_df, hovertemplate))
 
     # Overall layout looks like this:
-    # (map: cases per capita) (map: total cases)
+    # (map: county cases per capita) (map: county total cases)
+    # (map: state cases per capita) (map: state total cases)
     # (annotations)
     # (slider control)
-    fig = make_subplots(rows=1, cols=2,
-                        specs=[[{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}]])
-    _generate_choropleth_traces(fig, data, "county", county_geojson, "Cases Per Capita", "cases_per_capita",
+    fig = make_subplots(rows=2, cols=2,
+                        specs=[[{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}],
+                               [{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}]])
+    _generate_choropleth_traces(fig, data, "county", county_geojson, "Cases Per Capita by County", "cases_per_capita",
                                 row=1, col=1)
-    _generate_choropleth_traces(fig, data, "county", county_geojson, "Total Cases (Thousands)", "log_cases",
+    _generate_choropleth_traces(fig, data, "county", county_geojson, "Total Cases (log1000) by County", "log_cases",
                                 use_std=False, row=1, col=2)
+    _generate_choropleth_traces(fig, data, "states", state_geojson, "Cases Per Capita by State", "cases_per_capita",
+                                row=2, col=1)
+    _generate_choropleth_traces(fig, data, "states", state_geojson, "Total Cases (log1000) by State", "log_cases",
+                                use_std=False, row=2, col=2)
 
     # I had to change from a choropleth to a choroplethmapbox. Despite the poor documentation of plotly,
     # the difference appears to the that the former uses a webgl powered service known as mapbox.
@@ -308,8 +315,8 @@ def _generate_graph(args, config, data_path):
     # map lets us zoom in exclusively on the US. If we ever go back to choropleth, set `geo_scope="usa"`
     logging.debug("Generating misc layout...")
     fig.update_layout(title_text="COVID-19 Hotspots",
-                      annotations=[{ "x": 0.55,
-                                     "y": 0.05,
+                      annotations=[{ "x": 0.50,
+                                     "y": -0.04,
                                      "xref": "paper",
                                      "yref": "paper",
                                      "text": "Maps by <a href='mailto:AdamJohnso@gmail.com'>Adam Johnson</a>. " \
@@ -353,8 +360,17 @@ def _generate_choropleth_traces(fig, data, dkey, geojson_url, title, zkey, row, 
     logging.debug(f"Generating choropleths for '{title}'")
 
     # Doggone color bars just appear whereever they please :/
-    x = 0 if col == 1 else 1
-    xanchor = "left" if col == 1 else "right"
+    # Unfortunately, the plotly documentation is vague with NO examples about how to position
+    # these ruddy things. This is my best guesswork. If you can fix it to not suck, be my guest...
+    colorbars = {
+        (1, 1): dict(x=-0.05, y=0.795, len=0.46),
+        (1, 2): dict(x=0.50, y=0.795, len=0.46),
+        (2, 1): dict(x=-0.05, y=0.226, len=0.46),
+        (2, 2): dict(x=0.50, y=0.226, len=0.46),
+    }
+
+    colorbar = colorbars[(row, col)]
+    colorbar["title"] = title
 
     for datum in data:
         df = getattr(datum, f"{dkey}_df")
@@ -380,9 +396,7 @@ def _generate_choropleth_traces(fig, data, dkey, geojson_url, title, zkey, row, 
                                          zmax=zmax, zmin=zmin,
                                          text=df["text"],
                                          hovertemplate=datum.hovertemplate,
-                                         colorbar_title=title,
-                                         colorbar_x=x,
-                                         colorbar_xanchor=xanchor,
+                                         colorbar=colorbar,
                                          marker_opacity=0.5, marker_line_width=0,
                                          # Portland and Temps offer the best visualizations IME
                                          colorscale="Portland",

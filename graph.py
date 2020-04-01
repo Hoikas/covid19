@@ -368,11 +368,6 @@ def _generate_graph(args, config, data_path):
         "Show Countries": dict(geojson=config["map"]["world_geojson"], dkey="world"),
     }
 
-    # Scales for every single doggone map ahoy
-    scales = { map_config["dkey"]: [_make_scale(datum.stats[map_config["dkey"]][subplot["zkey"]], subplot["use_std"])
-                                    for datum in data for subplot in subplots]
-               for map_config in map_configs.values() }
-
     default_map = next(iter(map_configs.values()))
     for subplot in subplots:
         _generate_choropleth_traces(fig, data, default_map["geojson"], default_map["dkey"], **subplot)
@@ -406,7 +401,9 @@ def _generate_graph(args, config, data_path):
     map_buttons = []
     for name, map_config in map_configs.items():
         button = dict(label=name, method="restyle", args=[dict(geojson=map_config["geojson"])])
-        map_scales = scales[map_config["dkey"]]
+        map_scales = [_make_scale(datum.stats[map_config["dkey"]][subplot["zkey"]], subplot["use_std"])
+                      # Danger: outer -> inner
+                      for subplot in subplots for datum in data]
         button["args"][0]["zmin"] = [i[0] for i in map_scales]
         button["args"][0]["zmax"] = [i[1] for i in map_scales]
         map_buttons.append(button)

@@ -64,7 +64,7 @@ def _download_csv(**kwargs):
         logging.debug(f"Downloading {url}")
         with urllib.request.urlopen(url) as response:
             fp = tempfile.SpooledTemporaryFile(mode="w+")
-            fp.write(response.read().decode("windows-1251"))
+            fp.write(response.read().decode("windows-1252"))
             fp.seek(0)
             result[key] = fp
             logging.debug(f"... done with {url}")

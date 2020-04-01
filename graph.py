@@ -290,13 +290,11 @@ def _generate_graph(args, config, data_path):
                            f"Deaths Per Capita: {x['deaths_per_capita']}<br>" \
                            f"Fatality Rate: {round(x['fatality_rate'] * 2, 2)}%"
     apply_log = lambda value: 0 if value <= 0 else log10(value)
-    default_geojson = config["map"]["county_geojson"]
 
     def make_stats_dict(*args, **kwargs):
         stats_entry = namedtuple("stats_entry", ["max", "mean", "median", "min", "std"])
         make_stats = lambda x: stats_entry(x.max(), x.mean(), x.median(), x.min(), x.std())
         return { i: { j: make_stats(frame[j]) for j in args } for i, frame in kwargs.items() }
-
 
     # Each JSON file in the data path is a trace on the figure. The slider will allow us to select
     # which trace the user is viewing.
@@ -358,14 +356,26 @@ def _generate_graph(args, config, data_path):
     fig = make_subplots(rows=2, cols=2, vertical_spacing=0.05,
                         specs=[[{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}],
                                [{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}]])
-    _generate_choropleth_traces(fig, data, "county", default_geojson, "Cases Per Capita", "cases_per_capita",
-                                row=1, col=1)
-    _generate_choropleth_traces(fig, data, "county", default_geojson, "Total Cases (log10)", "log_cases",
-                                use_std=False, row=1, col=2)
-    _generate_choropleth_traces(fig, data, "county", default_geojson, "Deaths Per Capita", "deaths_per_capita",
-                                row=2, col=1)
-    _generate_choropleth_traces(fig, data, "county", default_geojson, "Total Deaths (log10)", "log_deaths",
-                                use_std=False, row=2, col=2)
+    subplots = [
+        dict(title="Cases Per Capita", zkey="cases_per_capita", use_std=True, row=1, col=1),
+        dict(title="Total Cases (log10)", zkey="log_cases", use_std=False, row=1, col=2),
+        dict(title="Deaths Per Capita", zkey="deaths_per_capita", use_std=True, row=2, col=1),
+        dict(title="Total Deaths (log10", zkey="log_deaths", use_std=False, row=2, col=2),
+    ]
+    map_configs = {
+        "Show US Counties": dict(geojson=config["map"]["county_geojson"], dkey="county"),
+        "Show US States": dict(geojson=config["map"]["state_geojson"], dkey="states"),
+        "Show Countries": dict(geojson=config["map"]["world_geojson"], dkey="world"),
+    }
+
+    # Scales for every single doggone map ahoy
+    scales = { map_config["dkey"]: [_make_scale(datum.stats[map_config["dkey"]][subplot["zkey"]], subplot["use_std"])
+                                    for datum in data for subplot in subplots]
+               for map_config in map_configs.values() }
+
+    default_map = next(iter(map_configs.values()))
+    for subplot in subplots:
+        _generate_choropleth_traces(fig, data, default_map["geojson"], default_map["dkey"], **subplot)
 
     logging.debug("Generating misc layout...")
     fig.update_layout(annotations=[dict(x=0.50, y=1.1,
@@ -393,17 +403,13 @@ def _generate_graph(args, config, data_path):
                         zoom=3)
 
     # Map type dropdown ahoy!
-    map_buttons = [
-        dict(args=["geojson", config["map"]["county_geojson"]],
-             label="Show US Counties",
-             method="restyle"),
-        dict(args=["geojson", config["map"]["state_geojson"]],
-             label="Show US States",
-             method="restyle"),
-        dict(args=["geojson", config["map"]["world_geojson"]],
-             label="Show Countries",
-             method="restyle"),
-    ]
+    map_buttons = []
+    for name, map_config in map_configs.items():
+        button = dict(label=name, method="restyle", args=[dict(geojson=map_config["geojson"])])
+        map_scales = scales[map_config["dkey"]]
+        button["args"][0]["zmin"] = [i[0] for i in map_scales]
+        button["args"][0]["zmax"] = [i[1] for i in map_scales]
+        map_buttons.append(button)
     fig.update_layout(updatemenus=[dict(buttons=map_buttons,
                                         direction="down",
                                         showactive=True,
@@ -436,7 +442,21 @@ def _generate_graph(args, config, data_path):
         logging.debug("Showing figure...")
         fig.show()
 
-def _generate_choropleth_traces(fig, data, dkey, geojson_url, title, zkey, row, col, use_std=True):
+def _make_scale(stats, use_std):
+    if use_std:
+        mean = stats.mean
+        stddev = stats.std
+        zmax = mean + stddev
+        zmin = max(mean-stddev, 0.0)
+    else:
+        zmax = stats.max
+        # Prevents a negative scale from appearing
+        if zmax == 0.0:
+            zmax = 1.0
+        zmin = stats.min
+    return zmin, zmax
+
+def _generate_choropleth_traces(fig, data, geojson_url, dkey, /, *, title, zkey, row, col, use_std=True):
     import plotly.graph_objects as go
     logging.debug(f"Generating choropleths for '{title}'")
 
@@ -453,32 +473,21 @@ def _generate_choropleth_traces(fig, data, dkey, geojson_url, title, zkey, row, 
     colorbar = colorbars[(row, col)]
     colorbar["title"] = title
 
-    for datum in data:
-        if use_std:
-            mean = datum.stats[dkey][zkey].mean
-            stddev = datum.stats[dkey][zkey].std
-            zmax = mean + stddev
-            zmin = max(mean-stddev, 0.0)
-        else:
-            zmax = datum.stats[dkey][zkey].max
-            # Prevents a negative scale from appearing
-            if zmax == 0.0:
-                zmax = 1.0
-            zmin = datum.stats[dkey][zkey].min
-
+    for i, datum in enumerate(data):
         df = datum.df[dkey]
-        trace = fig.add_choroplethmapbox(geojson=geojson_url,
-                                         name=datum.date,
-                                         locations=df["location"],
-                                         z=df[zkey],
-                                         zmax=zmax, zmin=zmin,
-                                         text=df["text"],
-                                         hovertemplate=datum.hovertemplate,
-                                         colorbar=colorbar,
-                                         marker_opacity=0.5, marker_line_width=0,
-                                         # Portland and Temps offer the best visualizations IME
-                                         colorscale="Portland",
-                                         row=row, col=col)
+        zmin, zmax = _make_scale(datum.stats[dkey][zkey], use_std)
+        fig.add_choroplethmapbox(geojson=geojson_url,
+                                 name=datum.date,
+                                 locations=df["location"],
+                                 z=df[zkey],
+                                 zmax=zmax, zmin=zmin,
+                                 text=df["text"],
+                                 hovertemplate=datum.hovertemplate,
+                                 colorbar=colorbar,
+                                 marker_opacity=0.5, marker_line_width=0,
+                                 # Portland and Temps offer the best visualizations IME
+                                 colorscale="Portland",
+                                 row=row, col=col)
 
 if __name__ == "__main__":
     args = _parser.parse_args()

@@ -35,6 +35,7 @@ _dump_parser.add_argument("dest", type=Path, help="path to dump generated json",
 # Graph command
 _graph_parser = _sub_parsers.add_parser("graph")
 _graph_parser.add_argument("-d", "--data", type=str, help="path to json data")
+_graph_parser.add_argument("-z", "--zkey", type=str, help="z key of data to graph (omit for all)")
 _graph_parser.add_argument("dest", help="path to output the graph (will open in browser if omitted", nargs="?", default="")
 
 # FIPS codes for dealing with the Census Bureau's nonsense--updated for 2019 estimate
@@ -275,12 +276,79 @@ def _graph(args, config):
             _generate_graph(args, config, json_path)
 
 def _generate_graph(args, config, data_path):
+    from plotly.subplots import make_subplots
+
+    all_subplots = [
+        dict(title="Cases Per Capita", zkey="cases_per_capita", use_std=True, row=1, col=1),
+        dict(title="Total Cases (log10)", zkey="log_cases", use_std=False, row=1, col=2),
+        dict(title="Deaths Per Capita", zkey="deaths_per_capita", use_std=True, row=2, col=1),
+        dict(title="Total Deaths (log10)", zkey="log_deaths", use_std=False, row=2, col=2),
+    ]
+    map_configs = {
+        "Show US Counties": dict(geojson=config["map"]["county_geojson"], dkey="county"),
+        "Show US States": dict(geojson=config["map"]["state_geojson"], dkey="states"),
+        "Show Countries": dict(geojson=config["map"]["world_geojson"], dkey="world"),
+    }
+
+    # Overall layout looks like this:
+    # (map: cases per capita) (map: log total cases)
+    # (map: deaths per capita) (map: log total deaths)
+    # (annotations)
+    # (slider control)
+    all_figs = make_subplots(rows=2, cols=2, vertical_spacing=0.05,
+                             specs=[[{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}],
+                                   [{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}]])
+
+    # Pick which subplots we want to render... Note that if we are not generating the HTML, then
+    # we should only generate ONE.
+    subplots = []
+    if args.zkey:
+        subplot = next((i for i in all_subplots if i["zkey"].lower() == args.zkey), None)
+        if subplot is None:
+            logging.critical(f"invalid zkey specified: '{args.zkey}'")
+            return
+        subplots.append((subplot["zkey"], None, [subplot]))
+    else:
+        subplots.append(("all_choropleths", all_figs, all_subplots))
+        if args.dest:
+            subplots.extend((i["zkey"], None, [i]) for i in all_subplots)
+
+    # Do data stuff now that we know we won't fail on stupid crap.
+    data = list(_generate_graph_data(data_path))
+
+    default_map = next(iter(map_configs.values()))
+    figures = {}
+    for fig_name, fig, fig_subplots in subplots:
+        for subplot in fig_subplots:
+            fig = _generate_choropleth_traces(fig, data, default_map["geojson"], default_map["dkey"], **subplot)
+        _add_fig_controls(fig, data, map_configs, fig_subplots)
+        figures[fig_name] = fig
+
+    if args.dest:
+        logging.debug("Writing Figures...")
+        output_path = Path(args.dest)
+        if len(figures) == 1:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with output_path.open("w") as fp:
+                logging.debug(f"Writing HTML... {output_path}")
+                next(iter(figures.values())).write_html(fp)
+        else:
+            output_path.mkdir(parents=True, exist_ok=True)
+            for zkey, fig in figures.items():
+                fig_path = output_path.joinpath(f"{zkey}.html")
+                logging.debug(f"Writing HTML... {fig_path}")
+                with fig_path.open("w") as fp:
+                    fig.write_html(fp)
+    else:
+        logging.debug("Showing figure...")
+        assert len(figures) == 1
+        next(iter(figures.values())).show()
+
+def _generate_graph_data(data_path):
     from collections import namedtuple
     from math import isnan, log10
     import pandas as pd
-    from plotly.subplots import make_subplots
 
-    data = []
     data_entry = namedtuple("data_entry", ["date", "df", "hovertemplate", "stats"])
     make_hover = lambda x: f"<b>{x['title']}</b><br>" \
                            f"Population: {int(x['population']) if not isnan(x['population']) else 'NaN'}<br>"  \
@@ -346,32 +414,9 @@ def _generate_graph(args, config, data_path):
 
         # NOTE: reusing the same data frames so we can just swap out the geojson for different views.
         #       all the above chicanery was for the statistics.
-        data.append(data_entry(i.stem, dict(county=df, states=df, world=df), hovertemplate, stats))
+        yield data_entry(i.stem, dict(county=df, states=df, world=df), hovertemplate, stats)
 
-    # Overall layout looks like this:
-    # (map: cases per capita) (map: log total cases)
-    # (map: deaths per capita) (map: log total deaths)
-    # (annotations)
-    # (slider control)
-    fig = make_subplots(rows=2, cols=2, vertical_spacing=0.05,
-                        specs=[[{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}],
-                               [{"type": "choroplethmapbox"}, {"type": "choroplethmapbox"}]])
-    subplots = [
-        dict(title="Cases Per Capita", zkey="cases_per_capita", use_std=True, row=1, col=1),
-        dict(title="Total Cases (log10)", zkey="log_cases", use_std=False, row=1, col=2),
-        dict(title="Deaths Per Capita", zkey="deaths_per_capita", use_std=True, row=2, col=1),
-        dict(title="Total Deaths (log10", zkey="log_deaths", use_std=False, row=2, col=2),
-    ]
-    map_configs = {
-        "Show US Counties": dict(geojson=config["map"]["county_geojson"], dkey="county"),
-        "Show US States": dict(geojson=config["map"]["state_geojson"], dkey="states"),
-        "Show Countries": dict(geojson=config["map"]["world_geojson"], dkey="world"),
-    }
-
-    default_map = next(iter(map_configs.values()))
-    for subplot in subplots:
-        _generate_choropleth_traces(fig, data, default_map["geojson"], default_map["dkey"], **subplot)
-
+def _add_fig_controls(fig, data, map_configs, subplots):
     logging.debug("Generating misc layout...")
     fig.update_layout(annotations=[dict(x=0.50, y=1.1,
                                         xref="paper", yref="paper",
@@ -429,16 +474,6 @@ def _generate_graph(args, config, data_path):
                                     steps=date_steps,
                                     currentvalue=dict(prefix="Showing COVID-19 Data for "))])
 
-    if args.dest:
-        logging.debug(f"Writing HTML... {args.dest}")
-        output_path = Path(args.dest)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("w") as fp:
-            fig.write_html(fp)
-    else:
-        logging.debug("Showing figure...")
-        fig.show()
-
 def _make_scale(stats, use_std):
     if use_std:
         mean = stats.mean
@@ -467,7 +502,11 @@ def _generate_choropleth_traces(fig, data, geojson_url, dkey, /, *, title, zkey,
         (2, 2): dict(x=0.50, y=0.248, len=0.51),
     }
 
-    colorbar = colorbars[(row, col)]
+    if fig is None:
+        fig, colorbar = go.Figure(), {}
+        row, col = None, None
+    else:
+        colorbar = colorbars[(row, col)]
     colorbar["title"] = title
 
     for i, datum in enumerate(data):
@@ -485,6 +524,7 @@ def _generate_choropleth_traces(fig, data, geojson_url, dkey, /, *, title, zkey,
                                  # Portland and Temps offer the best visualizations IME
                                  colorscale="Portland",
                                  row=row, col=col)
+    return fig
 
 if __name__ == "__main__":
     args = _parser.parse_args()

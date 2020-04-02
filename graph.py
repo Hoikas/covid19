@@ -52,6 +52,8 @@ COUNTY_REMAP = {
     ("New York City", "New York"): (36005, 36047, 36061, 36081, 36085),
 }
 
+CAPITA = 1000
+
 def _download_csv(**kwargs):
     logging.info("Downloading CSV files...")
 
@@ -279,9 +281,9 @@ def _generate_graph(args, config, data_path):
     from plotly.subplots import make_subplots
 
     all_subplots = [
-        dict(title="Cases Per Capita", zkey="cases_per_capita", use_std=True, row=1, col=1),
+        dict(title=f"Cases Per {CAPITA:,} Population", zkey="cases_per_capita", use_std=True, row=1, col=1),
         dict(title="Total Cases (log10)", zkey="log_cases", use_std=False, row=1, col=2),
-        dict(title="Deaths Per Capita", zkey="deaths_per_capita", use_std=True, row=2, col=1),
+        dict(title=f"Deaths Per {CAPITA:,} Population", zkey="deaths_per_capita", use_std=True, row=2, col=1),
         dict(title="Total Deaths (log10)", zkey="log_deaths", use_std=False, row=2, col=2),
     ]
     map_configs = {
@@ -351,12 +353,12 @@ def _generate_graph_data(data_path):
 
     data_entry = namedtuple("data_entry", ["date", "df", "hovertemplate", "stats"])
     make_hover = lambda x: f"<b>{x['title']}</b><br>" \
-                           f"Population: {int(x['population']) if not isnan(x['population']) else 'NaN'}<br>"  \
-                           f"Total Cases: {x['total_cases']}<br>" \
-                           f"Cases Per Capita: {x['cases_per_capita']}<br>" \
-                           f"Total Deaths: {x['total_deaths']}<br>" \
-                           f"Deaths Per Capita: {x['deaths_per_capita']}<br>" \
-                           f"Fatality Rate: {round(x['fatality_rate'] * 2, 2)}%"
+                           f"Population: {x['population']:,.00f}<br>"  \
+                           f"Total Cases: {x['total_cases']:,}<br>" \
+                           f"Cases Per {CAPITA:,} Population: {x['cases_per_capita']:,.04}<br>" \
+                           f"Total Deaths: {x['total_deaths']:,}<br>" \
+                           f"Deaths Per {CAPITA:,} Population: {x['deaths_per_capita']:,.04}<br>" \
+                           f"Fatality Rate: {x['fatality_rate']:.02%}"
     apply_log = lambda value: 0 if value <= 0 else log10(value)
 
     def make_stats_dict(*args, **kwargs):
@@ -377,8 +379,8 @@ def _generate_graph_data(data_path):
         df["log_deaths"] = df["total_deaths"].apply(apply_log)
 
         # Moved rate calculations here for ease of use.
-        df["cases_per_capita"] = df.apply(lambda row: row["total_cases"] / row["population"], axis=1)
-        df["deaths_per_capita"] = df.apply(lambda row: row["total_deaths"] / row["population"], axis=1)
+        df["cases_per_capita"] = df.apply(lambda row: row["total_cases"] / (row["population"] / CAPITA), axis=1)
+        df["deaths_per_capita"] = df.apply(lambda row: row["total_deaths"] / (row["population"] / CAPITA), axis=1)
         df["fatality_rate"] = df.apply(lambda row: 0 if row["total_cases"] == 0 else
                                                    row["total_deaths"] / row["total_cases"],
                                        axis=1)
@@ -405,11 +407,11 @@ def _generate_graph_data(data_path):
 
         hovertemplate = "%{text}" \
                         f"<extra><b>US Case Data for {i.stem}</b><br>" \
-                        f"Mean Cases Per Capita: {stats['county']['cases_per_capita'].mean}<br>" \
-                        f"Median Cases Per Capita: {stats['county']['cases_per_capita'].median}<br>" \
+                        f"Mean Cases Per {CAPITA:,} Population: {stats['county']['cases_per_capita'].mean:,.04}<br>" \
+                        f"Median Cases Per {CAPITA:,} Population: {stats['county']['cases_per_capita'].median:,.04}<br>" \
                         f"STD: {stats['county']['cases_per_capita'].std}<br>" \
-                        f"Mean Total Cases: {stats['county']['total_cases'].mean}<br>" \
-                        f"Median Total Cases: {stats['county']['total_cases'].median}<br>" \
+                        f"Mean Total Cases Per County: {stats['county']['total_cases'].mean:,.04}<br>" \
+                        f"Median Total Cases Per County: {stats['county']['total_cases'].median:,.04}<br>" \
                         f"STD: {stats['county']['total_cases'].std}</extra>"
 
         # NOTE: reusing the same data frames so we can just swap out the geojson for different views.

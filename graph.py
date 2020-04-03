@@ -14,7 +14,10 @@
 #    along with COVID-19 Graph.  If not, see <http://www.gnu.org/licenses/>.
 
 import argparse
+import concurrent.futures
+from functools import partial
 import itertools
+import gzip
 import json
 import logging
 from pathlib import Path
@@ -37,6 +40,10 @@ _graph_parser = _sub_parsers.add_parser("graph")
 _graph_parser.add_argument("-d", "--data", type=str, help="path to json data")
 _graph_parser.add_argument("-z", "--zkey", type=str, help="z key of data to graph (omit for all)")
 _graph_parser.add_argument("dest", help="path to output the graph (will open in browser if omitted", nargs="?", default="")
+
+# Minify
+_minify_parser = _sub_parsers.add_parser("minifygeojson")
+_minify_parser.add_argument("dest", type=Path, help="path to dump minified geojson")
 
 # FIPS codes for dealing with the Census Bureau's nonsense--updated for 2019 estimate
 # original source: https://github.com/kjhealy/fips-codes
@@ -82,10 +89,36 @@ def _fetch_csv(config):
     csv_files["fips"] = open(FIPS_PATH, "r")
     return csv_files
 
+def _write_output(dest_path, contents, compression=None):
+    if isinstance(contents, str):
+        contents = contents.encode("utf-8")
+    assert isinstance(contents, (bytes, bytearray))
+
+    dest_path.parent.mkdir(exist_ok=True, parents=True)
+    if compression is None:
+        with dest_path.open("wb") as fp:
+            fp.write(contents)
+    elif compression == "gz":
+        gz_path = dest_path.with_suffix(f"{dest_path.suffix}.gz")
+        with gz_path.open("wb") as fp:
+            with gzip.GzipFile(filename=dest_path.name, fileobj=fp, mode="wb") as gzfp:
+                gzfp.write(contents)
+    elif compression == "br":
+        # Maybe you can has brotli?
+        br_path = dest_path.with_suffix(f"{dest_path.suffix}.br")
+        try:
+            import brotli
+        except ImportError:
+            logging.warning(f"{br_path.name} not produced (brotli failed to import)")
+        else:
+            with br_path.open("wb") as fp:
+                fp.write(brotli.compress(contents))
+    else:
+        raise RuntimeError(compression)
+
 def _generate_data(out_path, ecdc_file, census_file, fips_file, nytimes_file, pretty=False, concise=False):
     import csv
     from collections import defaultdict
-    from functools import partial
 
     logging.info("Generating data...")
 
@@ -278,6 +311,7 @@ def _graph(args, config):
             _generate_graph(args, config, json_path)
 
 def _generate_graph(args, config, data_path):
+    import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
     all_subplots = [
@@ -326,21 +360,26 @@ def _generate_graph(args, config, data_path):
         _add_fig_controls(fig, data, map_configs, fig_subplots)
         figures[fig_name] = fig
 
+    compression = (None, "gz", "br")
     if args.dest:
         logging.debug("Writing Figures...")
         output_path = Path(args.dest)
         if len(figures) == 1:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with output_path.open("w") as fp:
-                logging.debug(f"Writing HTML... {output_path}")
-                next(iter(figures.values())).write_html(fp)
+            logging.debug(f"Writing HTML... {output_path}")
+            html = next(iter(figures.values())).to_html(include_plotlyjs="cdn")
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                for i in comression:
+                    executor.submit(_write_output, output_path, html, i)
         else:
-            output_path.mkdir(parents=True, exist_ok=True)
-            for zkey, fig in figures.items():
-                fig_path = output_path.joinpath(f"{zkey}.html")
-                logging.debug(f"Writing HTML... {fig_path}")
-                with fig_path.open("w") as fp:
-                    fig.write_html(fp)
+            logging.debug("Generating HTML...")
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                to_html = partial(go.Figure.to_html, include_plotlyjs="cdn")
+                for zkey, html in zip(figures.keys(), executor.map(to_html, figures.values())):
+                    fig_path = output_path.joinpath(f"{zkey}.html")
+                    logging.debug(f"Writing HTML... {fig_path.name}")
+                    for i in compression:
+                        executor.submit(_write_output, fig_path, html, i)
+
     else:
         logging.debug("Showing figure...")
         assert len(figures) == 1
@@ -528,6 +567,28 @@ def _generate_choropleth_traces(fig, data, geojson_url, dkey, /, *, title, zkey,
                                  row=row, col=col)
     return fig
 
+
+def _minify(src_path, dest_path, compression=None):
+    with src_path.open("r") as fp:
+        geo = json.load(fp)
+    for i in geo["features"]:
+        if "properties" in i:
+            del i["properties"]
+    _write_output(dest_path, json.dumps(geo, separators=(',', ':')), compression)
+
+def _minify_geojson(args, config):
+    logging.info("Minifying geojson...")
+
+    data_path = Path(__file__).parent.joinpath("data")
+    geojson_iter = (i for i in data_path.glob("*.json") if i.name.startswith("geojson"))
+    compression = (None, "gz", "br")
+
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        for i in geojson_iter:
+            for j in compression:
+                executor.submit(_minify, i, args.dest.joinpath(i.name), j)
+
+
 if __name__ == "__main__":
     args = _parser.parse_args()
 
@@ -542,5 +603,9 @@ if __name__ == "__main__":
         _dump_json(args, config)
     elif args.command == "graph":
         _graph(args, config)
+    elif args.command == "minifygeojson":
+        _minify_geojson(args, config)
     else:
         raise RuntimeError()
+
+    logging.info("Have a nice day!")

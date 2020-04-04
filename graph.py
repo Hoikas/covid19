@@ -86,7 +86,7 @@ def _fetch_csv(config):
                               ecdc=config["data"]["ecdc"],
                               nyt_county=config["data"]["covid19"])
     # original is out-of-date, so use in-repo copy
-    csv_files["fips"] = open(FIPS_PATH, "r")
+    csv_files["fips"] = open(FIPS_PATH, "r", encoding="windows-1252")
     return csv_files
 
 def _write_output(dest_path, contents, compression=None):

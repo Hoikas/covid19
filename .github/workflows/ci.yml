@@ -1,0 +1,93 @@
+name: Build
+on: [push, pull_request]
+
+jobs:
+  build_data:
+    runs-on: ${{ matrix.os }}
+
+    env:
+      data_artifact: Data (${{ matrix.os }})
+
+    strategy:
+      matrix:
+        # MacOS is irrelevant and therefore not supported.
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+      - name: Setup Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: "3.8"
+          architecture: "x64"
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate Data
+        run: python graph.py dumpjson --pretty out
+
+      - name: Upload Data
+        uses: actions/upload-artifact@v1
+        with:
+          name: ${{ env.data_artifact }}
+          path: out
+
+  generate_maps:
+    runs-on: ${{ matrix.os }}
+    needs: build_data
+
+    env:
+      data_artifact: Data (${{ matrix.os }})
+
+    strategy:
+      matrix:
+        # MacOS is irrelevant and therefore not supported.
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+      - name: Setup Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: "3.8"
+          architecture: "x64"
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download Data
+        uses: actions/download-artifact@v1
+        with:
+          name: ${{ env.data_artifact }}
+
+      - name: Generate Maps
+        run: python graph.py graph -d "${{ env.data_artifact }}" out
+
+  minifygeojson:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        # MacOS is irrelevant and therefore not supported.
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+      - name: Setup Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: "3.8"
+          architecture: "x64"
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Minify GeoJSON
+        run: python graph.py minifygeojson out

@@ -1,0 +1,38 @@
+name: Continuous Deployment
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: "3.8"
+          architecture: "x64"
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate Graphs
+        run: python graph.py graph out
+
+      - name: Minify GeoJSON
+        run: python graph.py minifygeojson out
+
+      - name: Upload to Remote Server
+        uses: sebastianpopp/ftp-action@releases/v2
+        with:
+          host: ${{ secrets.ftp_server }}
+          user: ${{ secrets.ftp_username }}
+          password: ${{ secrets.ftp_password }}
+          localDir: out
+          remoteDir: ${{ secrets.ftp_directory }}

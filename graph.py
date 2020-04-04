@@ -529,7 +529,7 @@ def _make_scale(stats, use_std):
         zmin = stats.min
     return zmin, zmax
 
-def _generate_choropleth_traces(fig, data, geojson_url, dkey, /, *, title, zkey, row, col, use_std=True):
+def _generate_choropleth_traces(fig, data, geojson, dkey, /, *, title, zkey, row, col, use_std=True):
     import plotly.graph_objects as go
     logging.debug(f"Generating choropleths for '{title}'")
 
@@ -550,21 +550,27 @@ def _generate_choropleth_traces(fig, data, geojson_url, dkey, /, *, title, zkey,
         colorbar = colorbars[(row, col)]
     colorbar["title"] = title
 
+    traces = []
     for i, datum in enumerate(data):
         df = datum.df[dkey]
         zmin, zmax = _make_scale(datum.stats[dkey][zkey], use_std)
-        fig.add_choroplethmapbox(geojson=geojson_url,
-                                 name=datum.date,
-                                 locations=df["location"],
-                                 z=df[zkey],
-                                 zmax=zmax, zmin=zmin,
-                                 text=df["text"],
-                                 hovertemplate=datum.hovertemplate,
-                                 colorbar=colorbar,
-                                 marker_opacity=0.5, marker_line_width=0,
-                                 # Portland and Temps offer the best visualizations IME
-                                 colorscale="Portland",
-                                 row=row, col=col)
+        traces.append(dict(type="choroplethmapbox",
+                           geojson=geojson,
+                           name=datum.date,
+                           locations=df["location"],
+                           z=df[zkey],
+                           zmax=zmax, zmin=zmin,
+                           text=df["text"],
+                           hovertemplate=datum.hovertemplate,
+                           colorbar=colorbar,
+                           marker_opacity=0.5, marker_line_width=0,
+                           # Portland and Temps offer the best visualizations IME
+                           colorscale="Portland"))
+
+    # This minimizes the plotly API calls and is MUCH faster.
+    rows = [row] * len(data) if row is not None else None
+    cols = [col] * len(data) if col is not None else None
+    fig.add_traces(traces, rows, cols)
     return fig
 
 

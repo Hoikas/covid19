@@ -1,4 +1,7 @@
 # covid19
+![Build](https://github.com/Hoikas/covid19/workflows/Build/badge.svg)
+![Continuous Deployment](https://github.com/Hoikas/covid19/workflows/Continuous%20Deployment/badge.svg)
+
 FOSS COVID-19 Graphs
 
 ## Acknowledgements

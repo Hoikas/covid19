@@ -15,6 +15,7 @@
 
 import argparse
 import concurrent.futures
+import datetime
 from functools import partial
 import itertools
 import gzip
@@ -459,6 +460,8 @@ def _generate_graph_data(data_path):
 
 def _add_fig_controls(fig, data, map_configs, subplots):
     logging.debug("Generating misc layout...")
+
+    now = datetime.datetime.now(datetime.timezone.utc)
     fig.update_layout(annotations=[dict(x=0.50, y=1.1,
                                         xref="paper", yref="paper",
                                         yanchor="top",
@@ -472,7 +475,9 @@ def _add_fig_controls(fig, data, map_configs, subplots):
                                              "World Data from the <a href='https://www.ecdc.europa.eu/en'>" \
                                              "European Centre for Disease Prevention and Control</a>. " \
                                              "<a href='https://www.ecdc.europa.eu/en/publications-data/download-todays-data-geographic-distribution-covid-19-cases-worldwide'>" \
-                                             "(Source)</a>",
+                                             "(Source)</a><br>" \
+
+                                             f"Page generated on {now.isoformat(sep=' ', timespec='seconds')}.",
                                         showarrow=False)])
 
     # I had to change from a choropleth to a choroplethmapbox. Despite the poor documentation of plotly,

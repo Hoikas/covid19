@@ -265,8 +265,8 @@ def _generate_data(out_path, ecdc_file, census_file, fips_file, nytimes_file, pr
             datum = data[date][iso3]
             datum["location"] = iso3
             # Some countries don't have population data? Interesting.
-            if i["popData2018"].isnumeric():
-                datum["population"] = int(i["popData2018"])
+            if i["popData2019"].isnumeric():
+                datum["population"] = int(i["popData2019"])
             datum["title"] = i["countriesAndTerritories"].replace('_', ' ')
             datum["total_cases"] = int(i["cases"])
             datum["total_deaths"] = int(i["deaths"])
